@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 const root = new URL("..", import.meta.url);
 const config = JSON.parse((await readFile(new URL("config.json", root), "utf8")).replace(/^\uFEFF/, ""));
 const port = config.serverPort || 37651;
+const logging = process.argv.includes("--logging");
 
 async function killOldService() {
   return new Promise((resolve) => {
@@ -21,11 +22,11 @@ async function killOldService() {
 async function startService() {
   const serverPath = fileURLToPath(new URL("src/server.js", root));
   const child = spawn(process.execPath, [serverPath], {
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true
+    detached: !logging,
+    stdio: logging ? "inherit" : "ignore",
+    windowsHide: !logging
   });
-  child.unref();
+  if (!logging) child.unref();
   // 等待服务就绪（只检测端口是否响应，不发送任何动作）
   for (let i = 0; i < 20; i++) {
     await new Promise((r) => setTimeout(r, 300));

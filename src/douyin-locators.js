@@ -1,3 +1,42 @@
+// Shared selectors for login panel detection.
+// Used by both Playwright locators (array) and browser-side scripts (CSS string).
+
+export const LOGIN_PANEL_SELECTORS = [
+  '#login-panel-new',
+  '[id^="login-panel-new"]',
+  '[role="dialog"]:has-text("登录")',
+  '[class*="login" i][class*="panel" i]',
+  '[class*="login-modal" i]',
+  '#douyin_login_comp_normal_input_id',
+  '#douyin_login_comp_qr_code_id'
+];
+
+// CSS-only selectors (valid for document.querySelector, no Playwright extensions)
+export const LOGIN_PANEL_CSS = [
+  '#login-panel-new',
+  '[id^="login-panel-new"]',
+  '[role="dialog"]',
+  '[class*="login" i][class*="panel" i]',
+  '[class*="login-modal" i]',
+  '#douyin_login_comp_normal_input_id',
+  '#douyin_login_comp_qr_code_id'
+].join(', ');
+
+export const LOGIN_CLOSE_SELECTORS = [
+  '#login-panel-new .YoNA2Hyj.qKr0RhiL',
+  '[id^="login-panel-new"] .YoNA2Hyj.qKr0RhiL',
+  '.YoNA2Hyj.qKr0RhiL',
+  'svg.YoNA2Hyj.qKr0RhiL',
+  '[data-e2e*="close"]',
+  '[aria-label*="关闭"]',
+  '[aria-label*="close" i]',
+  '[title*="关闭"]',
+  '[title*="close" i]',
+  '[class*="close" i]'
+];
+
+export const LOGIN_CLOSE_CSS = LOGIN_CLOSE_SELECTORS.join(', ');
+
 async function pickVisibleLocator(page, selectors) {
   for (const selector of selectors) {
     const locator = page.locator(selector).first();
@@ -35,22 +74,22 @@ export async function findSearchButton(page) {
 }
 
 export async function findLoginPanel(page) {
-  return pickVisibleLocator(page, [
-    '#login-panel-new',
-    '[id^="login-panel-new"]'
-  ]);
+  return pickVisibleLocator(page, LOGIN_PANEL_SELECTORS);
 }
 
 export async function findLoginCloseLocator(page) {
-  return pickVisibleLocator(page, [
-    '#login-panel-new [data-e2e*="close"]',
-    '#login-panel-new [aria-label*="关闭"]',
-    '#login-panel-new [title*="关闭"]',
-    '#login-panel-new button[aria-label*="关闭"]',
-    '#login-panel-new button[title*="关闭"]',
-    '#login-panel-new svg.YoNA2Hyj.qKr0RhiL',
-    '#login-panel-new svg'
-  ]);
+  const panel = await findLoginPanel(page);
+  if (!panel) return null;
+  for (const selector of LOGIN_CLOSE_SELECTORS) {
+    for (const locator of [page.locator(selector).first(), panel.locator(selector).first()]) {
+      try {
+        if ((await locator.count()) > 0 && await locator.isVisible()) return locator;
+      } catch {
+        // Keep scanning other close-button shapes.
+      }
+    }
+  }
+  return null;
 }
 
 export async function findPlaybackPanelButton(page) {

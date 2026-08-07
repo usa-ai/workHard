@@ -26,7 +26,7 @@
 work start
 ```
 
-之后可以直接控制：
+之后可以直接控制抖音：
 
 ```powershell
 work next
@@ -50,6 +50,18 @@ work off
 ```powershell
 & "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222
 npm start
+```
+
+重启控制服务时，默认后台运行且不持续输出日志：
+
+```powershell
+npm restart
+```
+
+如果需要让日志持续输出到当前控制台，使用：
+
+```powershell
+npm restart -- --logging
 ```
 
 打开 `https://www.douyin.com` 后即可使用：
