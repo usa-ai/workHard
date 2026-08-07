@@ -1,0 +1,18 @@
+{
+  "name": "browser-media-control",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local JavaScript-injection controls for Douyin and other browser media pages",
+  "type": "module",
+  "bin": {
+    "work": "src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "restart": "node scripts/restart.mjs",
+    "install-cli": "npm link"
+  },
+  "dependencies": {
+    "playwright-core": "^1.52.0"
+  }
+}

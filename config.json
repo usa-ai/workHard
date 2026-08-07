@@ -1,0 +1,9 @@
+{
+    "commandPrefix":  "work",
+    "serverPort":  37651,
+    "cdpPort":  9222,
+    "urlPattern":  "douyin.com",
+    "douyinUrl":  "https://www.douyin.com",
+    "desktopMode":  true,
+    "actionTimeoutMs":  25000
+}
