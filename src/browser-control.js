@@ -11,6 +11,7 @@ import {
   findSearchButton,
   findSearchInput
 } from "./douyin-locators.js";
+import { ACTION_MESSAGES, videoResult } from "./messages.js";
 
 const STATE_SCRIPT = () => {
   const videos = [...document.querySelectorAll("video")];
@@ -63,8 +64,7 @@ const ACTION_SCRIPT = async ({ action }) => {
   }
   if (!current) throw new Error("当前页面没有找到 video 元素");
   if (action === "play") await current.play();
-  if (action === "pause") current.pause();
-  if (action === "toggle") {
+  if (action === "pause" || action === "toggle") {
     if (current.paused) await current.play();
     else current.pause();
   }
@@ -94,19 +94,20 @@ const LIKE_SCRIPT = () => {
 };
 
 const FAVORITE_SCRIPT = () => {
-  const targets = [...document.querySelectorAll('[data-e2e="video-player-favorite"], [data-e2e*="favorite"], .xgplayer-favorite, button[aria-label*="收藏"]')].filter((item) => {
+  const targets = [...document.querySelectorAll('[data-e2e="video-player-favorite"], [data-e2e*="favorite"], [data-e2e*="collect"], .VIRs3TP5, .xgplayer-favorite, button[aria-label*="收藏"]')].filter((item) => {
     const rect = item.getBoundingClientRect();
     return rect.width > 2 && rect.height > 2 && rect.bottom > 0 && rect.top < innerHeight;
   });
   let target = targets[0];
   if (!target) return { found: false };
   for (let i = 0; i < 10 && target; i++, target = target.parentElement) {
-    if (target.matches("button,[role=button],a")) break;
+    if (target.matches("button,[role=button],a,[data-e2e*='collect'],[data-e2e*='favorite'],.VIRs3TP5")) break;
   }
   target = target || targets[0];
   const rect = target?.getBoundingClientRect();
   if (!rect || rect.width < 2 || rect.height < 2) return { found: false };
-  const before = target.getAttribute("aria-pressed") || target.getAttribute("data-e2e-state") || target.getAttribute("data-favorited") || target.className?.toString() || "";
+  const stateNode = target.closest?.('[data-e2e*="collect"],[data-e2e*="favorite"]') || target;
+  const before = stateNode.getAttribute("aria-pressed") || stateNode.getAttribute("data-e2e-state") || stateNode.getAttribute("data-favorited") || stateNode.className?.toString() || "";
   return { found: true, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, before };
 };
 
@@ -133,16 +134,21 @@ const CLOSE_LOGIN_SCRIPT = ({ panelCss, closeCss }) => {
   const target = candidates[0];
   if (!target) return false;
   const clickable = target.closest?.('button,[role="button"]') || target;
-  if (target.matches?.('.YoNA2Hyj.qKr0RhiL') && target.parentElement) target.parentElement.click?.();
-  clickable.click?.();
-  clickable.dispatchEvent?.(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
-  clickable.dispatchEvent?.(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
-  clickable.dispatchEvent?.(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+  const targets = target.matches?.('.YoNA2Hyj.qKr0RhiL') && target.parentElement
+    ? [target.parentElement, clickable]
+    : [clickable];
+  for (const item of targets) {
+    item.click?.();
+    item.dispatchEvent?.(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
+    item.dispatchEvent?.(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
+    item.dispatchEvent?.(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+  }
   return true;
 };
 
 const LOGIN_CONFIG = { panelCss: LOGIN_PANEL_CSS, closeCss: LOGIN_CLOSE_CSS };
-const LOGIN_RETRY_HINT = "请键入：work login 并切换至第二桌面(win + Tab)登录后重试";
+const LOGIN_REQUIRED_MESSAGE = ACTION_MESSAGES.loginRequired;
+const LOGIN_RETRY_HINT = ACTION_MESSAGES.loginRetryHint;
 
 const LOGIN_VISIBLE_SCRIPT = () => {
   const roots = [
@@ -196,7 +202,8 @@ const SEARCH_STATE_SCRIPT = () => {
     title: document.title
   };
   const input = document.querySelector('input[data-e2e="searchbar-input"], input[placeholder*="搜索"], input[placeholder*="搜"]');
-  const button = document.querySelector('[data-e2e="searchbar-button"], button[data-e2e="searchbar-button"], button:has-text("搜索")');
+  const button = [...document.querySelectorAll('[data-e2e="searchbar-button"], button')]
+    .find((item) => item.getAttribute("data-e2e") === "searchbar-button" || (item.textContent || "").trim().includes("搜索"));
   return {
     ...locationState,
     hasInput: Boolean(input),
@@ -319,6 +326,8 @@ export class BrowserController {
       this.log("INFO", "login modal detected", { attempts, timeoutMs, hasCloseLocator: Boolean(close), noCloseCount, pageUrl: page.url() });
       if (close) {
         await close.click({ timeout: 300 }).catch(() => {});
+        const box = await close.boundingBox().catch(() => null);
+        if (box) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2).catch(() => {});
         await page.evaluate(CLOSE_LOGIN_SCRIPT, LOGIN_CONFIG).catch(() => {});
         await this.waitStep(page, 200);
         noCloseCount = 0;
@@ -336,18 +345,37 @@ export class BrowserController {
     return !stillThere;
   }
 
-  _requireLogin(page, actionName) {
-    throw new Error("检测到登录弹窗，请键入：work login 并切换至第二桌面(win + Tab)登录或继续在未登录状态下使用。");
+  _requireLogin() {
+    throw new Error(LOGIN_REQUIRED_MESSAGE);
   }
 
-  async ensureLoginReady(page, actionName) {
+  async ensureLoginReady(page) {
     const loginPanel = await this.hasLoginPopup(page);
     if (!loginPanel) return;
-    this._requireLogin(page, actionName);
+    this._requireLogin();
   }
 
   async hasLoginPopup(page) {
     return Boolean(await page.evaluate(LOGIN_VISIBLE_SCRIPT).catch(() => false)) || Boolean(await findLoginPanel(page).catch(() => null));
+  }
+
+  async isLoggedIn(page) {
+    return page.evaluate(() => {
+      const visible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return rect.width > 12 && rect.height > 12 && rect.bottom > 0 && rect.top < innerHeight &&
+          style.display !== "none" && style.visibility !== "hidden";
+      };
+      const loginControls = [...document.querySelectorAll('button, [role="button"]')].some((element) => {
+        if (!visible(element)) return false;
+        const text = `${element.getAttribute("aria-label") || ""} ${element.getAttribute("title") || ""} ${element.textContent || ""}`;
+        return element.matches(".WGl8bZmp") || /登录|一键登录/.test(text);
+      });
+      if (loginControls) return false;
+      const candidates = [...document.querySelectorAll('a[href*="/user/self"]')];
+      return candidates.some(visible);
+    }).catch(() => false);
   }
 
   async waitStep(page, ms = 400) {
@@ -363,7 +391,7 @@ export class BrowserController {
     let scrollAttempts = 0;
     while (Date.now() < deadline) {
       if (allowCloseLogin) await this.closeLogin(page, 600);
-      else await this.ensureLoginReady(page, "进入视频");
+      else await this.ensureLoginReady(page);
       const result = await page.evaluate(() => {
         const inView = (el) => {
           const r = el.getBoundingClientRect();
@@ -474,6 +502,47 @@ export class BrowserController {
     return false;
   }
 
+  async openRandomSearchResult(page, timeoutMs = 15000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      await this.ensureLoginReady(page);
+      const cards = await page.evaluate(() => [...document.querySelectorAll("#search-result-container .search-result-card")]
+        .map((card, index) => {
+          const rect = card.getBoundingClientRect();
+          const videoNode = [...card.querySelectorAll("[class*='video_']")].find((node) => /(?:^|\s)video_\d+(?:\s|$)/.test(node.className?.toString() || ""));
+          const videoId = videoNode?.className?.toString().match(/(?:^|\s)video_(\d+)(?:\s|$)/)?.[1] || "";
+          const target = card.querySelector(".videoImage, [class*='video_'], [data-e2e='feed-active-video']");
+          const targetRect = target?.getBoundingClientRect();
+          const visible = rect.width > 160 && rect.height > 160 && rect.bottom > 0 && rect.top < innerHeight &&
+            targetRect && targetRect.width > 80 && targetRect.height > 80 && targetRect.bottom > 0 && targetRect.top < innerHeight;
+          return { index, videoId, visible };
+        })
+        .filter((card) => card.visible)).catch(() => []);
+      if (!cards.length) {
+        await this.waitStep(page, 300);
+        continue;
+      }
+
+      const picked = cards[Math.floor(Math.random() * cards.length)];
+      const card = page.locator("#search-result-container .search-result-card").nth(picked.index);
+      const target = card.locator(".videoImage, [class*='video_'], [data-e2e='feed-active-video'], img[class*='backgroundCover']").first();
+      const videoId = picked.videoId;
+      await target.click({ timeout: 2000 }).catch(() => {});
+      await this.waitStep(page, 900);
+      let state = await page.evaluate(STATE_SCRIPT).catch(() => null);
+      if (state?.modalId || /\/video\/|\/detail\//.test(state?.url || "")) return true;
+
+      if (videoId) {
+        await page.goto(`https://www.douyin.com/video/${videoId}`, { waitUntil: "domcontentloaded", timeout: 12000 }).catch(() => {});
+        await this.waitStep(page, 500);
+        state = await page.evaluate(STATE_SCRIPT).catch(() => null);
+        if (Boolean(state?.modalId) || /\/video\/|\/detail\//.test(state?.url || "")) return true;
+      }
+      await this.waitStep(page, 300);
+    }
+    return false;
+  }
+
   stateChanged(before, after) {
     if (!before || !after) return false;
     if (before.modalId !== after.modalId) return true;
@@ -500,10 +569,10 @@ export class BrowserController {
         const page = pages.find((candidate) => candidate.url().includes(this.config.urlPattern));
         const loginPanel = page ? await this.hasLoginPopup(page) : false;
         if (loginPanel) {
-          throw new Error("检测到登录弹窗，请键入：work login 并切换至第二桌面(win + Tab)登录或继续在未登录状态下使用。");
+          throw new Error(LOGIN_REQUIRED_MESSAGE);
         }
       }
-      if (!error.message.includes("work login") && !/需要|无效|不支持|没有找到|未能从主页进入|视频未切换/.test(error.message)) {
+      if (!error.message.includes("work login") && !/需要|无效|不支持/.test(error.message)) {
         error.message += `；${LOGIN_RETRY_HINT}`;
       }
       this.log("ERROR", "action failed", { action, durationMs: Date.now() - queuedAt, error: error.message });
@@ -513,13 +582,14 @@ export class BrowserController {
     }
   }
 
+  buildStartResult(requestedAction, page, loggedIn, state = undefined) {
+    return videoResult(requestedAction, page.url(), loggedIn, state);
+  }
+
   async _runAction(action, payload = "") {
     const requestedAction = action;
     if (action === "open" || action === "refresh") action = "start";
     if (!["start", "login", "off"].includes(action)) this.stopLoginGuard();
-    if (this.loginMode && !["login", "start", "off"].includes(action)) {
-      throw new Error("检测到登录弹窗，请键入：work login 并切换至第二桌面(win + Tab)登录或继续在未登录状态下使用。");
-    }
     if (action === "off") {
       const script = fileURLToPath(new URL("../scripts/close-douyin.ps1", import.meta.url));
       try {
@@ -549,21 +619,29 @@ export class BrowserController {
           else reject(new Error("关闭抖音失败，请切换至第二桌面（Win + Tab 切换）手动关闭"));
         });
       });
-      return { action, closed: true, message: "抖音已关闭" };
+      return { action, closed: true, message: ACTION_MESSAGES.closed };
     }
     const browser = await this.connectOrLaunch();
     const contexts = browser.contexts();
     const pages = contexts.flatMap((context) => context.pages()).filter((candidate) => !candidate.isClosed());
     let page = pages.find((candidate) => candidate.url().includes(this.config.urlPattern));
+    if (this.loginMode && !["login", "start", "off"].includes(action)) {
+      if (page && await this.isLoggedIn(page)) this.loginMode = false;
+      else throw new Error(LOGIN_REQUIRED_MESSAGE);
+    }
     if (action === "login") {
       this.stopLoginGuard();
-      if (this.loginMode) {
-        return { action: "login", message: "请切换至第二桌面(win + Tab)登录或键入 work refresh 继续在未登录状态下使用。" };
-      }
       page = page || pages.find((candidate) => candidate.url().startsWith("http")) || await contexts[0].newPage();
       await page.goto(this.config.douyinUrl, { waitUntil: "domcontentloaded", timeout: 12000 }).catch(() => {});
       await this.waitStep(page, 1000);
-      const message = "请切换至第二桌面(win + Tab)登录或键入 work refresh 继续在未登录状态下使用。";
+      const message = ACTION_MESSAGES.loginHint;
+      if (await this.isLoggedIn(page)) {
+        this.loginMode = false;
+        const clicked = await this.clickAnyVideo(page, { totalTimeoutMs: 12000, requireModalChange: true });
+        if (!clicked) throw new Error("已登录，但没有找到可进入的视频");
+        await this.waitForPlaying(page, 5000);
+        return { action: "login", pageUrl: page.url(), playing: true, message: ACTION_MESSAGES.loginDetected };
+      }
       if (await findLoginPanel(page).catch(() => null)) {
         this.loginMode = true;
         return { action: "login", message };
@@ -600,6 +678,7 @@ export class BrowserController {
         throw new Error(`抖音页面导航失败: ${navigationError.message}`);
       }
       this.log("INFO", "open: page loaded", { pageUrl: page.url() });
+      const loggedIn = await this.isLoggedIn(page);
       const mover = fileURLToPath(new URL("../scripts/move-douyin-window.ps1", import.meta.url));
       spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", mover, "-TitlePattern", "抖音"], { detached: true, stdio: "ignore" }).unref();
       for (let i = 0; i < 20; i++) {
@@ -635,40 +714,26 @@ export class BrowserController {
         const inVideoDetail = Boolean(state?.modalId) || /\/video\/|\/detail\//.test(state?.url || "");
         if (inVideoDetail && state?.current?.readyState >= 2 && !state.current.paused && state.current.currentTime > 0.05) {
           this.log("INFO", "open: video playing", state);
-          return {
-            action: requestedAction,
-            pageUrl: page.url(),
-            playing: true,
-            message: requestedAction === "refresh"
-              ? "已继续在未登录状态下使用，并随机进入一个视频"
-              : "抖音已在第二桌面（Win + Tab 切换）最小化打开"
-          };
+          return this.buildStartResult(requestedAction, page, loggedIn, state);
         }
         await page.evaluate(PLAY_VISIBLE_SCRIPT).catch(() => {});
         await this.waitStep(page, 250);
       }
       const playing = await this.waitForPlaying(page, 5000);
       if (!playing?.modalId && !/\/video\/|\/detail\//.test(playing?.url || "")) {
-        throw new Error("视频仍停留在主页，请执行 work refresh 重试");
+        throw new Error(ACTION_MESSAGES.videoOnHome);
       }
-      return {
-        action: requestedAction,
-        pageUrl: page.url(),
-        playing: true,
-        message: requestedAction === "refresh"
-          ? "已继续在未登录状态下使用，并随机进入一个视频"
-          : "抖音已在第二桌面（Win + Tab 切换）最小化打开"
-      };
+      return this.buildStartResult(requestedAction, page, loggedIn, playing);
     }
     if (!page) throw new Error(`没有找到 URL 包含 ${this.config.urlPattern} 的标签页`);
     const loginPanel = await this.hasLoginPopup(page);
     if (loginPanel) {
       if (this.loginGuard) await this.closeLogin(page, 1200);
-      else throw new Error("检测到登录弹窗，请键入：work login 并切换至第二桌面(win + Tab)登录或继续在未登录状态下使用。");
+      else throw new Error(LOGIN_REQUIRED_MESSAGE);
     }
     if (action === "search") {
       const searchText = payload || "";
-      if (!searchText.trim()) throw new Error("search 需要搜索关键词");
+      if (!searchText.trim()) throw new Error(ACTION_MESSAGES.searchRequired);
       // 优先返回主页进行搜索（主页搜索框更稳定可靠）
       const returned = await page.evaluate(() => {
         const back = document.querySelector('.Vjmi41VB') || document.querySelector('.o7hAjQkB.isDark') || document.querySelector('.Xj717eA');
@@ -678,38 +743,48 @@ export class BrowserController {
       if (returned) {
         this.log("INFO", "search: returned to home page");
         await this.waitStep(page, 800);
-        await this.ensureLoginReady(page, "搜索");
+        await this.ensureLoginReady(page);
       }
-      let input = await findSearchInput(page).catch(() => null);
-      if (!input) {
-        await this.ensureLoginReady(page, "搜索");
+      let input = null;
+      for (let attempt = 0; attempt <= 2 && !input; attempt++) {
+        await this.ensureLoginReady(page);
         input = await findSearchInput(page).catch(() => null);
+        if (!input && attempt < 2) await this.waitStep(page, 500);
       }
-      if (!input) throw new Error("没有找到搜索框");
+      if (!input) throw new Error(ACTION_MESSAGES.noSearchInput);
       await input.click({ timeout: 500 }).catch(() => {});
       await input.fill(searchText, { timeout: 1000 }).catch(async () => {
         await input.press("Control+A").catch(() => {});
         await input.type(searchText, { delay: 20 }).catch(() => {});
       });
+      const waitForSearchPage = async (timeoutMs = 6000) => {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          if (/\/search\//.test(page.url())) return true;
+          await this.waitStep(page, 500);
+        }
+        return /\/search\//.test(page.url());
+      };
       const button = await findSearchButton(page).catch(() => null);
       if (button) {
-        await button.click({ timeout: 600 }).catch(() => {});
+        await button.click({ timeout: 1500 }).catch(() => {});
       } else {
         await input.press("Enter").catch(() => {});
       }
-      await this.waitStep(page, 1000);
-      await this.ensureLoginReady(page, "搜索");
-      const clicked = await this.clickAnyVideo(page, { totalTimeoutMs: 9000, requireModalChange: false });
+      if (!(await waitForSearchPage())) {
+        await input.press("Enter").catch(() => {});
+        if (!(await waitForSearchPage())) throw new Error(ACTION_MESSAGES.searchNotLoaded);
+      }
+      await this.ensureLoginReady(page);
+      const clicked = await this.openRandomSearchResult(page);
       if (!clicked) throw new Error("搜索后没有找到可点击的视频卡片");
       await page.evaluate(PLAY_VISIBLE_SCRIPT).catch(() => {});
       const playing = await this.waitForPlaying(page, 5000);
       return {
         action: "search",
         query: searchText,
-        pageUrl: page.url(),
-        playing: true,
-        state: playing,
-        message: `已搜索“${searchText}”并随机进入一个视频`
+        ...videoResult("search", page.url(), false, playing),
+        message: ACTION_MESSAGES.searched(searchText)
       };
     }
     if (action === "quickly") {
@@ -844,28 +919,28 @@ export class BrowserController {
         }, rateNum).catch(() => ({ success: false }));
         this.log("INFO", "quickly: override result", overrideResult);
         if (overrideResult?.success) {
-          return { action: "quickly", rate: rawRate, playbackRate: rateNum, message: `已切换到 ${rawRate} 倍速` };
+          return { action: "quickly", rate: rawRate, playbackRate: rateNum, message: ACTION_MESSAGES.speedChanged(rawRate) };
         }
       }
 
       if (result?.found && result.actualRate === rateNum) {
-        return { action: "quickly", rate: rawRate, playbackRate: rateNum, message: `已切换到 ${rawRate} 倍速` };
+        return { action: "quickly", rate: rawRate, playbackRate: rateNum, message: ACTION_MESSAGES.speedChanged(rawRate) };
       }
       // 倍速功能需要登录，未登录时页面会弹出登录框
       const loginVisible = await findLoginPanel(page).catch(() => null);
       if (loginVisible) {
-        this._requireLogin(page, "调整倍速");
+        this._requireLogin();
       }
       throw new Error(`倍速切换失败（panelOpened=${result?.panelOpened}, uiClicked=${result?.uiClicked}, actualRate=${result?.actualRate}），请先执行 ${this.config.commandPrefix || "work"} start 后重试`);
     }
     if (action === "like") {
-      await this.ensureLoginReady(page, "点赞");
+      await this.ensureLoginReady(page);
       const clicked = await page.evaluate(LIKE_SCRIPT);
       if (!clicked?.found) throw new Error("没有找到点赞按钮");
       await page.mouse.click(clicked.x, clicked.y).catch(() => {});
       await this.waitStep(page, 500);
-      if (await this.hasLoginPopup(page)) this._requireLogin(page, "点赞");
-      await this.ensureLoginReady(page, "点赞");
+      if (await this.hasLoginPopup(page)) this._requireLogin();
+      await this.ensureLoginReady(page);
       const deadline = Date.now() + 2500;
       let afterLike = "";
       while (Date.now() < deadline) {
@@ -883,32 +958,33 @@ export class BrowserController {
         throw new Error(`点赞状态没有改变，当前状态: ${afterLike || "未知"}`);
       }
       this.log("INFO", "like state", { before: clicked.before, after: afterLike });
-      return { action, message: "点赞成功" };
+      return { action, message: ACTION_MESSAGES.liked };
     }
     if (action === "favorite") {
-      await this.ensureLoginReady(page, "收藏");
+      await this.ensureLoginReady(page);
       const clicked = await page.evaluate(FAVORITE_SCRIPT);
       if (!clicked?.found) throw new Error("没有找到收藏按钮");
       await page.mouse.click(clicked.x, clicked.y).catch(() => {});
       await this.waitStep(page, 500);
-      if (await this.hasLoginPopup(page)) this._requireLogin(page, "收藏");
-      await this.ensureLoginReady(page, "收藏");
+      if (await this.hasLoginPopup(page)) this._requireLogin();
+      await this.ensureLoginReady(page);
       const deadline = Date.now() + 2500;
       let afterState = "";
       while (Date.now() < deadline) {
         afterState = await page.evaluate(() => {
-          const visible = [...document.querySelectorAll('[data-e2e="video-player-favorite"], [data-e2e*="favorite"]')].find((item) => {
+          const visible = [...document.querySelectorAll('[data-e2e="video-player-favorite"], [data-e2e*="favorite"], [data-e2e*="collect"], .VIRs3TP5')].find((item) => {
             const rect = item.getBoundingClientRect();
             return rect.width > 2 && rect.height > 2 && rect.bottom > 0 && rect.top < innerHeight;
           });
-          return visible?.getAttribute("aria-pressed") || visible?.getAttribute("data-e2e-state") || visible?.getAttribute("data-favorited") || visible?.className?.toString() || "";
+          const stateNode = visible?.closest?.('[data-e2e*="collect"],[data-e2e*="favorite"]') || visible;
+          return stateNode?.getAttribute("aria-pressed") || stateNode?.getAttribute("data-e2e-state") || stateNode?.getAttribute("data-favorited") || stateNode?.className?.toString() || "";
         }).catch(() => "");
         if (afterState && afterState !== clicked.before) break;
         await this.waitStep(page, 150);
       }
       if (!afterState || afterState === clicked.before) throw new Error("收藏状态没有改变");
       this.log("INFO", "favorite state", { before: clicked.before, after: afterState });
-      return { action, message: "收藏成功" };
+      return { action, message: ACTION_MESSAGES.favorited };
     }
     const before = (action === "next" || action === "prev") ? await page.evaluate(STATE_SCRIPT) : null;
     const playbackBefore = ["play", "pause", "toggle"].includes(action)
@@ -923,16 +999,16 @@ export class BrowserController {
       let after = await page.evaluate(STATE_SCRIPT).catch(() => null);
       for (let i = 0; i < 20 && !this.stateChanged(before, after); i++) {
         await this.waitStep(page, 250);
-        await this.ensureLoginReady(page, action === "next" ? "切换到下一个视频" : "切换到上一个视频");
+        await this.ensureLoginReady(page);
         after = await page.evaluate(STATE_SCRIPT).catch(() => null);
       }
       if (!this.stateChanged(before, after)) {
-        await this.ensureLoginReady(page, action === "next" ? "切换到下一个视频" : "切换到上一个视频");
+        await this.ensureLoginReady(page);
         const nav = await page.evaluate(NAV_BUTTON_SCRIPT, { direction }).catch(() => null);
         if (nav) await page.mouse.click(nav.x, nav.y).catch(() => {});
         for (let i = 0; i < 20 && !this.stateChanged(before, after); i++) {
           await this.waitStep(page, 250);
-          await this.ensureLoginReady(page, action === "next" ? "切换到下一个视频" : "切换到上一个视频");
+          await this.ensureLoginReady(page);
           after = await page.evaluate(STATE_SCRIPT).catch(() => null);
         }
       }
@@ -947,13 +1023,13 @@ export class BrowserController {
         playing: true,
         pageUrl: page.url(),
         state: playing,
-        message: action === "next" ? "已切换到下一个视频并开始播放" : "已切换到上一个视频并开始播放"
+        message: action === "next" ? ACTION_MESSAGES.next : ACTION_MESSAGES.prev
       };
     }
     if (["play", "pause", "toggle"].includes(action)) {
       const state = playbackBefore;
       if (!state?.current) throw new Error("当前页面没有找到 video 元素");
-      const expectedPaused = action === "pause" ? true : action === "play" ? false : !state.current.paused;
+      const expectedPaused = action === "play" ? false : !state.current.paused;
       const deadline = Date.now() + 3000;
       while (Date.now() < deadline) {
         const current = await page.evaluate(STATE_SCRIPT).catch(() => null);
@@ -962,15 +1038,15 @@ export class BrowserController {
             action,
             playing: !expectedPaused,
             pageUrl: page.url(),
-            message: expectedPaused ? "已暂停" : "已开始播放"
+            message: expectedPaused ? ACTION_MESSAGES.paused : ACTION_MESSAGES.playing
           };
         }
         await this.waitStep(page, 150);
       }
       throw new Error(`无法${expectedPaused ? "暂停" : "播放"}当前视频`);
     }
-    const messages = { mute: "已静音", unmute: "已取消静音" };
-    return { ...result, pageUrl: page.url(), message: messages[action] };
+    const message = action === "mute" ? ACTION_MESSAGES.muted : ACTION_MESSAGES.unmuted;
+    return { ...result, pageUrl: page.url(), message };
   }
 
   async close() {

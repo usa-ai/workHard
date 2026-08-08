@@ -117,6 +117,8 @@ export async function findFavoriteButton(page) {
     '[data-e2e="video-player-favorite"]',
     'button[data-e2e="video-player-favorite"]',
     '[data-e2e*="favorite"]',
+    '[data-e2e*="collect"]',
+    '.VIRs3TP5',
     '.xgplayer-favorite',
     'button:has-text("收藏")'
   ]);

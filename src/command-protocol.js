@@ -1,4 +1,4 @@
-const ACTION_ALIASES = {
+export const ACTION_ALIASES = Object.freeze({
   open: "start",
   home: "start",
   start: "start",
@@ -15,8 +15,9 @@ const ACTION_ALIASES = {
   zan: "like",
   search: "search",
   quickly: "quickly",
+  fast: "quickly",
   fav: "favorite",
-};
+});
 
 export function normalizeActionName(name) {
   if (!name) return "";

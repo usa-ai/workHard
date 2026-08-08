@@ -10,9 +10,13 @@
   "scripts": {
     "start": "node src/server.js",
     "restart": "node scripts/restart.mjs",
+    "restart:logging": "node scripts/restart.mjs --logging",
     "install-cli": "npm link"
   },
   "dependencies": {
     "playwright-core": "^1.52.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0"
   }
 }

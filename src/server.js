@@ -2,12 +2,12 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { BrowserController } from "./browser-control.js";
 import { log } from "./logger.js";
-import { parseActionRoute } from "./command-protocol.js";
+import { ACTION_ALIASES, parseActionRoute } from "./command-protocol.js";
 
 const root = new URL("..", import.meta.url);
 const configText = await readFile(new URL("config.json", root), "utf8");
 const config = JSON.parse(configText.replace(/^\uFEFF/, ""));
-const allowed = new Set(["start", "refresh", "login", "off", "next", "prev", "play", "pause", "toggle", "mute", "unmute", "like", "search", "quickly", "favorite"]);
+const allowed = new Set(Object.values(ACTION_ALIASES));
 const controller = new BrowserController(config, log);
 
 const send = (res, status, body) => {

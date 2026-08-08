@@ -7,7 +7,7 @@ import { readFile } from "node:fs/promises";
 const root = new URL("..", import.meta.url);
 const config = JSON.parse((await readFile(new URL("config.json", root), "utf8")).replace(/^\uFEFF/, ""));
 const port = config.serverPort || 37651;
-const logging = process.argv.includes("--logging");
+const logging = process.argv.includes("logging") || process.argv.includes("--logging") || process.env.npm_config_logging === "true";
 
 async function killOldService() {
   return new Promise((resolve) => {
