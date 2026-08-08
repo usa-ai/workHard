@@ -142,6 +142,21 @@ const CLOSE_LOGIN_SCRIPT = ({ panelCss, closeCss }) => {
 };
 
 const LOGIN_CONFIG = { panelCss: LOGIN_PANEL_CSS, closeCss: LOGIN_CLOSE_CSS };
+const LOGIN_RETRY_HINT = "请键入：work login 并切换至第二桌面(win + Tab)登录后重试";
+
+const LOGIN_VISIBLE_SCRIPT = () => {
+  const roots = [
+    ...document.querySelectorAll('#login-panel-new, [id^="login-panel-new"], [id^="login-full-panel-"], [class*="login-modal" i]'),
+    ...[...document.querySelectorAll('[role="dialog"]')].filter((dialog) => (dialog.textContent || "").includes("登录"))
+  ];
+  const visible = (element) => {
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return rect.width > 2 && rect.height > 2 && rect.bottom > 0 && rect.top < innerHeight &&
+      style.display !== "none" && style.visibility !== "hidden";
+  };
+  return roots.some((root) => visible(root) || [...root.querySelectorAll("button,input,[role=button]")].some(visible));
+};
 
 const NAV_BUTTON_SCRIPT = ({ direction }) => {
   const direct = document.querySelector(direction > 0 ? '[data-e2e="video-switch-next-arrow"]' : '[data-e2e="video-switch-prev-arrow"]');
@@ -326,10 +341,13 @@ export class BrowserController {
   }
 
   async ensureLoginReady(page, actionName) {
-    const loginPanel = await findLoginPanel(page).catch(() => null);
+    const loginPanel = await this.hasLoginPopup(page);
     if (!loginPanel) return;
-    if (this.loginGuard && await this.closeLogin(page, 1200)) return;
     this._requireLogin(page, actionName);
+  }
+
+  async hasLoginPopup(page) {
+    return Boolean(await page.evaluate(LOGIN_VISIBLE_SCRIPT).catch(() => false)) || Boolean(await findLoginPanel(page).catch(() => null));
   }
 
   async waitStep(page, ms = 400) {
@@ -480,11 +498,13 @@ export class BrowserController {
       if (action !== "login" && action !== "off" && this.browser?.isConnected()) {
         const pages = this.browser.contexts().flatMap((context) => context.pages()).filter((page) => !page.isClosed());
         const page = pages.find((candidate) => candidate.url().includes(this.config.urlPattern));
-        const loginPanel = page ? await findLoginPanel(page).catch(() => null) : null;
+        const loginPanel = page ? await this.hasLoginPopup(page) : false;
         if (loginPanel) {
-          if (this.loginGuard) await this.closeLogin(page, 1200);
-          else throw new Error("检测到登录弹窗，请键入：work login 并切换至第二桌面(win + Tab)登录或继续在未登录状态下使用。");
+          throw new Error("检测到登录弹窗，请键入：work login 并切换至第二桌面(win + Tab)登录或继续在未登录状态下使用。");
         }
+      }
+      if (!error.message.includes("work login") && !/需要|无效|不支持|没有找到|未能从主页进入|视频未切换/.test(error.message)) {
+        error.message += `；${LOGIN_RETRY_HINT}`;
       }
       this.log("ERROR", "action failed", { action, durationMs: Date.now() - queuedAt, error: error.message });
       throw error;
@@ -496,6 +516,7 @@ export class BrowserController {
   async _runAction(action, payload = "") {
     const requestedAction = action;
     if (action === "open" || action === "refresh") action = "start";
+    if (!["start", "login", "off"].includes(action)) this.stopLoginGuard();
     if (this.loginMode && !["login", "start", "off"].includes(action)) {
       throw new Error("检测到登录弹窗，请键入：work login 并切换至第二桌面(win + Tab)登录或继续在未登录状态下使用。");
     }
@@ -640,7 +661,7 @@ export class BrowserController {
       };
     }
     if (!page) throw new Error(`没有找到 URL 包含 ${this.config.urlPattern} 的标签页`);
-    const loginPanel = await findLoginPanel(page).catch(() => null);
+    const loginPanel = await this.hasLoginPopup(page);
     if (loginPanel) {
       if (this.loginGuard) await this.closeLogin(page, 1200);
       else throw new Error("检测到登录弹窗，请键入：work login 并切换至第二桌面(win + Tab)登录或继续在未登录状态下使用。");
@@ -843,6 +864,7 @@ export class BrowserController {
       if (!clicked?.found) throw new Error("没有找到点赞按钮");
       await page.mouse.click(clicked.x, clicked.y).catch(() => {});
       await this.waitStep(page, 500);
+      if (await this.hasLoginPopup(page)) this._requireLogin(page, "点赞");
       await this.ensureLoginReady(page, "点赞");
       const deadline = Date.now() + 2500;
       let afterLike = "";
@@ -869,6 +891,7 @@ export class BrowserController {
       if (!clicked?.found) throw new Error("没有找到收藏按钮");
       await page.mouse.click(clicked.x, clicked.y).catch(() => {});
       await this.waitStep(page, 500);
+      if (await this.hasLoginPopup(page)) this._requireLogin(page, "收藏");
       await this.ensureLoginReady(page, "收藏");
       const deadline = Date.now() + 2500;
       let afterState = "";
