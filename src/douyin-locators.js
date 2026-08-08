@@ -4,6 +4,7 @@
 export const LOGIN_PANEL_SELECTORS = [
   '#login-panel-new',
   '[id^="login-panel-new"]',
+  '[id^="login-full-panel-"]',
   '[role="dialog"]:has-text("登录")',
   '[class*="login" i][class*="panel" i]',
   '[class*="login-modal" i]',
@@ -15,6 +16,7 @@ export const LOGIN_PANEL_SELECTORS = [
 export const LOGIN_PANEL_CSS = [
   '#login-panel-new',
   '[id^="login-panel-new"]',
+  '[id^="login-full-panel-"]',
   '[role="dialog"]',
   '[class*="login" i][class*="panel" i]',
   '[class*="login-modal" i]',
@@ -23,6 +25,7 @@ export const LOGIN_PANEL_CSS = [
 ].join(', ');
 
 export const LOGIN_CLOSE_SELECTORS = [
+  '#login-panel-new button[aria-label*="关闭"]',
   '#login-panel-new .YoNA2Hyj.qKr0RhiL',
   '[id^="login-panel-new"] .YoNA2Hyj.qKr0RhiL',
   '.YoNA2Hyj.qKr0RhiL',
@@ -78,15 +81,12 @@ export async function findLoginPanel(page) {
 }
 
 export async function findLoginCloseLocator(page) {
-  const panel = await findLoginPanel(page);
-  if (!panel) return null;
   for (const selector of LOGIN_CLOSE_SELECTORS) {
-    for (const locator of [page.locator(selector).first(), panel.locator(selector).first()]) {
-      try {
-        if ((await locator.count()) > 0 && await locator.isVisible()) return locator;
-      } catch {
-        // Keep scanning other close-button shapes.
-      }
+    const locator = page.locator(selector).first();
+    try {
+      if ((await locator.count()) > 0 && await locator.isVisible()) return locator;
+    } catch {
+      // Keep scanning other close-button shapes.
     }
   }
   return null;

@@ -7,29 +7,38 @@ import { parseActionRoute } from "./command-protocol.js";
 const root = new URL("..", import.meta.url);
 const configText = await readFile(new URL("config.json", root), "utf8");
 const config = JSON.parse(configText.replace(/^\uFEFF/, ""));
-const allowed = new Set(["start", "open", "off", "next", "prev", "pause", "toggle", "mute", "unmute", "like", "search", "quickly", "favorite", "fav", "collect"]);
+const allowed = new Set(["start", "refresh", "login", "off", "next", "prev", "play", "pause", "toggle", "mute", "unmute", "like", "search", "quickly", "favorite"]);
 const controller = new BrowserController(config, log);
 
+const send = (res, status, body) => {
+  res.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
+  res.end(JSON.stringify(body));
+};
+
 const server = http.createServer(async (req, res) => {
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  if (req.method === "GET" && req.url === "/health") {
+    send(res, 200, { ok: true });
+    return;
+  }
   if (req.method !== "POST" || !req.url.startsWith("/action/")) {
-    res.writeHead(404); res.end(JSON.stringify({ error: "Not found" })); return;
+    send(res, 404, { ok: false, error: "Not found" });
+    return;
   }
+
   const { action, payload } = parseActionRoute(req.url.slice("/action/".length));
-  log("INFO", "action received", { action });
   if (!allowed.has(action)) {
-    res.writeHead(400); res.end(JSON.stringify({ error: `不支持的动作: ${action}` })); return;
+    send(res, 400, { ok: false, error: `不支持的动作: ${action}` });
+    return;
   }
+
+  log("INFO", "action received", { action });
   try {
-    const result = await Promise.race([
-      controller.runAction(action, payload),
-      new Promise((_, reject) => setTimeout(() => reject(new Error(`动作 ${action} 超时（${config.actionTimeoutMs || 25000}ms），详情见 logs/server.log`)), config.actionTimeoutMs || 25000))
-    ]);
+    const result = await controller.runAction(action, payload);
     log("INFO", "action completed", { action });
-    res.writeHead(200); res.end(JSON.stringify({ ok: true, ...result }));
+    send(res, 200, { ok: true, ...result });
   } catch (error) {
     log("ERROR", "action failed", { action, error: error.stack || error.message });
-    res.writeHead(500); res.end(JSON.stringify({ ok: false, error: error.message }));
+    send(res, 500, { ok: false, error: error.message });
   }
 });
 

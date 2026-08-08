@@ -2,24 +2,20 @@ const ACTION_ALIASES = {
   open: "start",
   home: "start",
   start: "start",
+  refresh: "refresh",
+  login: "login",
   off: "off",
   close: "off",
   next: "next",
   prev: "prev",
-  previous: "prev",
   pause: "pause",
-  toggle: "pause",
-  play: "pause",
-  resume: "pause",
   mute: "mute",
   unmute: "unmute",
   like: "like",
   zan: "like",
   search: "search",
   quickly: "quickly",
-  favorite: "favorite",
   fav: "favorite",
-  collect: "favorite"
 };
 
 export function normalizeActionName(name) {
@@ -28,8 +24,7 @@ export function normalizeActionName(name) {
 }
 
 export function parseCliArgs(argv) {
-  const action = normalizeActionName(argv[2]);
-  return { action, args: argv.slice(3) };
+  return { action: normalizeActionName(argv[2]), args: argv.slice(3) };
 }
 
 export function buildActionPath(action, args = []) {
@@ -39,7 +34,8 @@ export function buildActionPath(action, args = []) {
 
 export function parseActionRoute(route) {
   const [rawAction = "", ...rest] = route.split("/");
-  const action = normalizeActionName(rawAction);
-  const payload = rest.length ? decodeURIComponent(rest.join("/")) : "";
-  return { action, payload };
+  return {
+    action: normalizeActionName(rawAction),
+    payload: rest.length ? decodeURIComponent(rest.join("/")) : ""
+  };
 }

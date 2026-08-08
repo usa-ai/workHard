@@ -8,11 +8,8 @@ import {
   LOGIN_CLOSE_CSS,
   findLoginCloseLocator,
   findLoginPanel,
-  findPlaybackPanelButton,
-  findPlaybackRateOption,
   findSearchButton,
-  findSearchInput,
-  findFavoriteButton
+  findSearchInput
 } from "./douyin-locators.js";
 
 const STATE_SCRIPT = () => {
@@ -65,13 +62,11 @@ const ACTION_SCRIPT = async ({ action }) => {
     return { action, before: state };
   }
   if (!current) throw new Error("当前页面没有找到 video 元素");
-  if (action === "pause") {
-    if (current.paused) {
-      current.muted = false;
-      await current.play().catch(() => {});
-    } else {
-      current.pause();
-    }
+  if (action === "play") await current.play();
+  if (action === "pause") current.pause();
+  if (action === "toggle") {
+    if (current.paused) await current.play();
+    else current.pause();
   }
   if (action === "mute" || action === "unmute") current.muted = action === "mute";
   return { action, paused: current.paused, muted: current.muted, currentTime: current.currentTime, readyState: current.readyState };
@@ -210,7 +205,30 @@ const QUICKLY_SCRIPT = async ({ rate }) => {
 };
 
 export class BrowserController {
-  constructor(config, logger = () => {}) { this.config = config; this.browser = null; this.log = logger; this.actionTail = Promise.resolve(); }
+  constructor(config, logger = () => {}) {
+    this.config = config;
+    this.browser = null;
+    this.log = logger;
+    this.actionTail = Promise.resolve();
+    this.loginGuard = null;
+    this.loginMode = false;
+  }
+
+  startLoginGuard(page) {
+    this.stopLoginGuard();
+    let running = false;
+    const timer = setInterval(async () => {
+      if (running || page.isClosed()) return;
+      running = true;
+      try { await this.closeLogin(page, 800); } finally { running = false; }
+    }, 250);
+    this.loginGuard = { timer };
+  }
+
+  stopLoginGuard() {
+    if (this.loginGuard) clearInterval(this.loginGuard.timer);
+    this.loginGuard = null;
+  }
 
   async connect(logAttempt = true) {
     const endpoint = `http://127.0.0.1:${this.config.cdpPort}`;
@@ -303,29 +321,15 @@ export class BrowserController {
     return !stillThere;
   }
 
-  async waitAndCloseLogin(page, graceMs = 1800) {
-    const deadline = Date.now() + graceMs;
-    while (Date.now() < deadline) {
-      const panel = await findLoginPanel(page).catch(() => null);
-      if (panel) return await this.closeLogin(page, 4000);
-      await this.waitStep(page, 200);
-    }
-    return true;
-  }
-
   _requireLogin(page, actionName) {
-    const onSecondDesktop = "请切换至第二桌面（Win + Tab 切换）登录后重试";
-    throw new Error(`暂时无法${actionName}，${onSecondDesktop}`);
+    throw new Error("检测到登录弹窗，请键入：work login 并切换至第二桌面(win + Tab)登录或继续在未登录状态下使用。");
   }
 
   async ensureLoginReady(page, actionName) {
     const loginPanel = await findLoginPanel(page).catch(() => null);
-    if (loginPanel) this._requireLogin(page, actionName);
-  }
-
-  async waitForVideoCard(page, timeoutMs = 6000) {
-    await this.waitStep(page, 400);
-    return await this.clickAnyVideo(page, { totalTimeoutMs: timeoutMs, requireModalChange: false });
+    if (!loginPanel) return;
+    if (this.loginGuard && await this.closeLogin(page, 1200)) return;
+    this._requireLogin(page, actionName);
   }
 
   async waitStep(page, ms = 400) {
@@ -333,15 +337,15 @@ export class BrowserController {
   }
 
   async clickAnyVideo(page, opts = {}) {
-    const { totalTimeoutMs = 10000, requireModalChange = true } = opts;
+    const { totalTimeoutMs = 10000, requireModalChange = true, allowCloseLogin = false } = opts;
     const deadline = Date.now() + totalTimeoutMs;
     const before = await page.evaluate(STATE_SCRIPT).catch(() => null);
-    const isInModal = (state) => Boolean(state?.modalId) ||
-      (state?.current?.width >= 800 && state?.current?.height >= 500 && state?.current?.currentTime > 0.2);
+    const isInVideoDetail = (state) => Boolean(state?.modalId) || /\/video\/|\/detail\//.test(state?.url || "");
     let lastReason = "no candidates";
     let scrollAttempts = 0;
     while (Date.now() < deadline) {
-      await this.closeLogin(page, 600).catch(() => {});
+      if (allowCloseLogin) await this.closeLogin(page, 600);
+      else await this.ensureLoginReady(page, "进入视频");
       const result = await page.evaluate(() => {
         const inView = (el) => {
           const r = el.getBoundingClientRect();
@@ -370,7 +374,7 @@ export class BrowserController {
               a.querySelector("img,svg,video") || (r.width > 80 && r.height > 40);
           });
         if (strongAnchorCandidates.length) {
-          const pick = strongAnchorCandidates[0];
+          const pick = strongAnchorCandidates[Math.floor(Math.random() * strongAnchorCandidates.length)];
           safeClick(pick);
           const pt = rectOf(pick);
           return { ok: true, stage: "strong-link", tag: pick.tagName, href: pick.getAttribute("href") || "", x: pt.x, y: pt.y };
@@ -387,7 +391,9 @@ export class BrowserController {
           'div[data-e2e="scroll-item"]',
           'div[class*="scroll-item"]'
         ].join(",");
-        const containers = [...document.querySelectorAll(containerSelector)].filter((c) => bigInView(c, 160, 160));
+        const containers = [...document.querySelectorAll(containerSelector)]
+          .filter((c) => bigInView(c, 160, 160))
+          .sort(() => Math.random() - 0.5);
         for (const container of containers) {
           const direct = container.querySelector('a[href*="modal_id="], a[href*="/video/"], a[href*="/detail/"]');
           if (direct && inView(direct)) {
@@ -409,7 +415,8 @@ export class BrowserController {
           }
         }
         // 3) 页面上大图 → 包一层再点（只点尺寸大的，避免误点 banner）
-        const bigImg = [...document.querySelectorAll("img")].find((img) => bigInView(img, 300, 300));
+        const bigImages = [...document.querySelectorAll("img")].filter((img) => bigInView(img, 300, 300));
+        const bigImg = bigImages[Math.floor(Math.random() * bigImages.length)];
         if (bigImg) {
           const wrap = bigImg.closest('a,button,[role="button"],li,div[data-e2e],section[class*="feed"],div[class*="video-card"],div[class*="FeedCell"]') || bigImg;
           safeClick(wrap);
@@ -435,7 +442,7 @@ export class BrowserController {
       // 给进入详情的页面过渡一点时间
       await this.waitStep(page, 900);
       const after = await page.evaluate(STATE_SCRIPT).catch(() => null);
-      const entered = isInModal(after) && (
+      const entered = isInVideoDetail(after) && (
         !requireModalChange ||
         after?.modalId !== before?.modalId ||
         after?.url !== before?.url ||
@@ -453,6 +460,7 @@ export class BrowserController {
     if (!before || !after) return false;
     if (before.modalId !== after.modalId) return true;
     if (before.current?.src && after.current?.src && before.current.src !== after.current.src) return true;
+    if (before.videoCount !== after.videoCount && after.current?.readyState >= 2) return true;
     if (before.current && after.current && before.current.src === after.current.src && after.current.currentTime < before.current.currentTime - 0.75) return true;
     return false;
   }
@@ -469,13 +477,13 @@ export class BrowserController {
       this.log("INFO", "action finished", { action, durationMs: Date.now() - queuedAt, result });
       return result;
     } catch (error) {
-      if (action !== "off" && this.browser?.isConnected()) {
+      if (action !== "login" && action !== "off" && this.browser?.isConnected()) {
         const pages = this.browser.contexts().flatMap((context) => context.pages()).filter((page) => !page.isClosed());
         const page = pages.find((candidate) => candidate.url().includes(this.config.urlPattern));
-        if (page) {
-          const closed = await this.waitAndCloseLogin(page);
-          if (!closed) error.message += "；检测到登录弹窗但关闭失败";
-          else error.message += "；已检测并关闭登录弹窗";
+        const loginPanel = page ? await findLoginPanel(page).catch(() => null) : null;
+        if (loginPanel) {
+          if (this.loginGuard) await this.closeLogin(page, 1200);
+          else throw new Error("检测到登录弹窗，请键入：work login 并切换至第二桌面(win + Tab)登录或继续在未登录状态下使用。");
         }
       }
       this.log("ERROR", "action failed", { action, durationMs: Date.now() - queuedAt, error: error.message });
@@ -486,7 +494,11 @@ export class BrowserController {
   }
 
   async _runAction(action, payload = "") {
-    if (action === "open") action = "start";
+    const requestedAction = action;
+    if (action === "open" || action === "refresh") action = "start";
+    if (this.loginMode && !["login", "start", "off"].includes(action)) {
+      throw new Error("检测到登录弹窗，请键入：work login 并切换至第二桌面(win + Tab)登录或继续在未登录状态下使用。");
+    }
     if (action === "off") {
       const script = fileURLToPath(new URL("../scripts/close-douyin.ps1", import.meta.url));
       try {
@@ -516,13 +528,44 @@ export class BrowserController {
           else reject(new Error("关闭抖音失败，请切换至第二桌面（Win + Tab 切换）手动关闭"));
         });
       });
-      return { action, closed: true };
+      return { action, closed: true, message: "抖音已关闭" };
     }
     const browser = await this.connectOrLaunch();
     const contexts = browser.contexts();
     const pages = contexts.flatMap((context) => context.pages()).filter((candidate) => !candidate.isClosed());
     let page = pages.find((candidate) => candidate.url().includes(this.config.urlPattern));
+    if (action === "login") {
+      this.stopLoginGuard();
+      if (this.loginMode) {
+        return { action: "login", message: "请切换至第二桌面(win + Tab)登录或键入 work refresh 继续在未登录状态下使用。" };
+      }
+      page = page || pages.find((candidate) => candidate.url().startsWith("http")) || await contexts[0].newPage();
+      await page.goto(this.config.douyinUrl, { waitUntil: "domcontentloaded", timeout: 12000 }).catch(() => {});
+      await this.waitStep(page, 1000);
+      const message = "请切换至第二桌面(win + Tab)登录或键入 work refresh 继续在未登录状态下使用。";
+      if (await findLoginPanel(page).catch(() => null)) {
+        this.loginMode = true;
+        return { action: "login", message };
+      }
+      const login = page.locator("button.semi-button.semi-button-primary.WGl8bZmp").first();
+      if (!(await login.count())) throw new Error("没有找到登录按钮，请执行 work refresh 后重试");
+      try {
+        await login.click({ timeout: 2000 });
+      } catch (error) {
+        const fullPanel = page.locator('[id^="login-full-panel-"]').first();
+        if (await fullPanel.count()) {
+          this.loginMode = true;
+          return { action: "login", message };
+        }
+        throw error;
+      }
+      await this.waitStep(page, 500);
+      if (!(await findLoginPanel(page).catch(() => null))) throw new Error("登录弹窗未打开，请执行 work login 重试");
+      this.loginMode = true;
+      return { action: "login", message };
+    }
     if (action === "start") {
+      this.loginMode = false;
       page = page || pages.find((candidate) => candidate.url().startsWith("http")) || await contexts[0].newPage();
       this.log("INFO", "open: navigating", { url: this.config.douyinUrl });
       let navigationError = null;
@@ -538,21 +581,13 @@ export class BrowserController {
       this.log("INFO", "open: page loaded", { pageUrl: page.url() });
       const mover = fileURLToPath(new URL("../scripts/move-douyin-window.ps1", import.meta.url));
       spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", mover, "-TitlePattern", "抖音"], { detached: true, stdio: "ignore" }).unref();
-      await page.evaluate(({ panelCss, closeCss, closeFn }) => {
-        if (window.__workDouyinLoginGuard?.timer) clearInterval(window.__workDouyinLoginGuard.timer);
-        window.__workDouyinLoginGuard?.observer?.disconnect?.();
-        const scanAndClose = () => closeFn({ panelCss, closeCss });
-        const guard = { timer: setInterval(scanAndClose, 200), observer: new MutationObserver(scanAndClose) };
-        guard.observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true });
-        window.__workDouyinLoginGuard = guard;
-        scanAndClose();
-      }, { ...LOGIN_CONFIG, closeFn: CLOSE_LOGIN_SCRIPT }).catch(() => {});
       for (let i = 0; i < 20; i++) {
         const closed = await this.closeLogin(page, 4000);
         if (closed) break;
         await this.waitStep(page, 250);
       }
-        this.log("INFO", "open: login guard applied");
+      this.startLoginGuard(page);
+      this.log("INFO", "open: login modal handled");
       const restoreHome = async () => {
         const back = await page.evaluate(() => {
           const candidate = document.querySelector('.Vjmi41VB') || document.querySelector('.o7hAjQkB.isDark') || document.querySelector('.Xj717eA');
@@ -569,27 +604,47 @@ export class BrowserController {
         }
       };
       await restoreHome();
-      const clicked = await this.clickAnyVideo(page, { totalTimeoutMs: 12000, requireModalChange: true });
-      if (!clicked) {
-        this.log("WARN", "open: clickAnyVideo did not enter video, retry with scroll-then-click fallback");
-      } else {
-         this.log("INFO", "open: video card clicked");
-       }
+      const clicked = await this.clickAnyVideo(page, { totalTimeoutMs: 12000, requireModalChange: true, allowCloseLogin: true });
+      if (!clicked) throw new Error("未能从主页进入视频详情，请执行 work refresh 重试");
+      this.log("INFO", "open: video card clicked");
       await this.waitStep(page, 500);
       for (let i = 0; i < 20; i++) {
         await this.closeLogin(page, 1000);
         const state = await page.evaluate(STATE_SCRIPT).catch(() => null);
-        if (state?.current?.readyState >= 2 && !state.current.paused && state.current.currentTime > 0.05) {
+        const inVideoDetail = Boolean(state?.modalId) || /\/video\/|\/detail\//.test(state?.url || "");
+        if (inVideoDetail && state?.current?.readyState >= 2 && !state.current.paused && state.current.currentTime > 0.05) {
           this.log("INFO", "open: video playing", state);
-          return { action: "start", pageUrl: page.url(), playing: true, message: "抖音已在第二桌面（Win + Tab 切换）最小化打开" };
+          return {
+            action: requestedAction,
+            pageUrl: page.url(),
+            playing: true,
+            message: requestedAction === "refresh"
+              ? "已继续在未登录状态下使用，并随机进入一个视频"
+              : "抖音已在第二桌面（Win + Tab 切换）最小化打开"
+          };
         }
         await page.evaluate(PLAY_VISIBLE_SCRIPT).catch(() => {});
         await this.waitStep(page, 250);
       }
-      await this.waitForPlaying(page, 5000);
-      return { action: "start", pageUrl: page.url(), playing: true, message: "抖音已在第二桌面（Win + Tab 切换）最小化打开" };
+      const playing = await this.waitForPlaying(page, 5000);
+      if (!playing?.modalId && !/\/video\/|\/detail\//.test(playing?.url || "")) {
+        throw new Error("视频仍停留在主页，请执行 work refresh 重试");
+      }
+      return {
+        action: requestedAction,
+        pageUrl: page.url(),
+        playing: true,
+        message: requestedAction === "refresh"
+          ? "已继续在未登录状态下使用，并随机进入一个视频"
+          : "抖音已在第二桌面（Win + Tab 切换）最小化打开"
+      };
     }
     if (!page) throw new Error(`没有找到 URL 包含 ${this.config.urlPattern} 的标签页`);
+    const loginPanel = await findLoginPanel(page).catch(() => null);
+    if (loginPanel) {
+      if (this.loginGuard) await this.closeLogin(page, 1200);
+      else throw new Error("检测到登录弹窗，请键入：work login 并切换至第二桌面(win + Tab)登录或继续在未登录状态下使用。");
+    }
     if (action === "search") {
       const searchText = payload || "";
       if (!searchText.trim()) throw new Error("search 需要搜索关键词");
@@ -602,11 +657,11 @@ export class BrowserController {
       if (returned) {
         this.log("INFO", "search: returned to home page");
         await this.waitStep(page, 800);
-        await this.closeLogin(page, 1000);
+        await this.ensureLoginReady(page, "搜索");
       }
       let input = await findSearchInput(page).catch(() => null);
       if (!input) {
-        await this.closeLogin(page, 1500);
+        await this.ensureLoginReady(page, "搜索");
         input = await findSearchInput(page).catch(() => null);
       }
       if (!input) throw new Error("没有找到搜索框");
@@ -622,12 +677,19 @@ export class BrowserController {
         await input.press("Enter").catch(() => {});
       }
       await this.waitStep(page, 1000);
-      await this.closeLogin(page, 1500);
+      await this.ensureLoginReady(page, "搜索");
       const clicked = await this.clickAnyVideo(page, { totalTimeoutMs: 9000, requireModalChange: false });
       if (!clicked) throw new Error("搜索后没有找到可点击的视频卡片");
       await page.evaluate(PLAY_VISIBLE_SCRIPT).catch(() => {});
       const playing = await this.waitForPlaying(page, 5000);
-      return { action: "search", query: searchText, pageUrl: page.url(), playing: true, state: playing };
+      return {
+        action: "search",
+        query: searchText,
+        pageUrl: page.url(),
+        playing: true,
+        state: playing,
+        message: `已搜索“${searchText}”并随机进入一个视频`
+      };
     }
     if (action === "quickly") {
       const rawRate = (payload || "").trim();
@@ -821,11 +883,14 @@ export class BrowserController {
         if (afterState && afterState !== clicked.before) break;
         await this.waitStep(page, 150);
       }
+      if (!afterState || afterState === clicked.before) throw new Error("收藏状态没有改变");
       this.log("INFO", "favorite state", { before: clicked.before, after: afterState });
       return { action, message: "收藏成功" };
     }
     const before = (action === "next" || action === "prev") ? await page.evaluate(STATE_SCRIPT) : null;
-    const pauseBefore = action === "pause" ? await page.evaluate(STATE_SCRIPT).catch(() => null) : null;
+    const playbackBefore = ["play", "pause", "toggle"].includes(action)
+      ? await page.evaluate(STATE_SCRIPT).catch(() => null)
+      : null;
     const result = await page.evaluate(ACTION_SCRIPT, { action });
     if (action === "next" || action === "prev") {
       const direction = action === "next" ? 1 : -1;
@@ -835,16 +900,16 @@ export class BrowserController {
       let after = await page.evaluate(STATE_SCRIPT).catch(() => null);
       for (let i = 0; i < 20 && !this.stateChanged(before, after); i++) {
         await this.waitStep(page, 250);
-        await this.closeLogin(page, 600).catch(() => {});
+        await this.ensureLoginReady(page, action === "next" ? "切换到下一个视频" : "切换到上一个视频");
         after = await page.evaluate(STATE_SCRIPT).catch(() => null);
       }
       if (!this.stateChanged(before, after)) {
-        await this.closeLogin(page, 1000).catch(() => {});
+        await this.ensureLoginReady(page, action === "next" ? "切换到下一个视频" : "切换到上一个视频");
         const nav = await page.evaluate(NAV_BUTTON_SCRIPT, { direction }).catch(() => null);
         if (nav) await page.mouse.click(nav.x, nav.y).catch(() => {});
         for (let i = 0; i < 20 && !this.stateChanged(before, after); i++) {
           await this.waitStep(page, 250);
-          await this.closeLogin(page, 600).catch(() => {});
+          await this.ensureLoginReady(page, action === "next" ? "切换到下一个视频" : "切换到上一个视频");
           after = await page.evaluate(STATE_SCRIPT).catch(() => null);
         }
       }
@@ -853,25 +918,41 @@ export class BrowserController {
       }
       await page.evaluate(PLAY_VISIBLE_SCRIPT).catch(() => {});
       const playing = await this.waitForPlaying(page, 3000);
-      return { action, changed: true, playing: true, pageUrl: page.url(), state: playing };
+      return {
+        action,
+        changed: true,
+        playing: true,
+        pageUrl: page.url(),
+        state: playing,
+        message: action === "next" ? "已切换到下一个视频并开始播放" : "已切换到上一个视频并开始播放"
+      };
     }
-    if (action === "pause") {
-      const state = pauseBefore;
+    if (["play", "pause", "toggle"].includes(action)) {
+      const state = playbackBefore;
       if (!state?.current) throw new Error("当前页面没有找到 video 元素");
+      const expectedPaused = action === "pause" ? true : action === "play" ? false : !state.current.paused;
       const deadline = Date.now() + 3000;
       while (Date.now() < deadline) {
         const current = await page.evaluate(STATE_SCRIPT).catch(() => null);
-        if (current?.current && current.current.paused !== state.current.paused) {
-          return { action, playing: !current.current.paused, pageUrl: page.url() };
+        if (current?.current?.paused === expectedPaused) {
+          return {
+            action,
+            playing: !expectedPaused,
+            pageUrl: page.url(),
+            message: expectedPaused ? "已暂停" : "已开始播放"
+          };
         }
         await this.waitStep(page, 150);
       }
-      throw new Error("播放/暂停状态没有改变");
+      throw new Error(`无法${expectedPaused ? "暂停" : "播放"}当前视频`);
     }
-    return { ...result, pageUrl: page.url() };
+    const messages = { mute: "已静音", unmute: "已取消静音" };
+    return { ...result, pageUrl: page.url(), message: messages[action] };
   }
 
   async close() {
+    this.stopLoginGuard();
+    this.loginMode = false;
     if (this.browser) await this.browser.close().catch(() => {});
     this.browser = null;
   }
