@@ -639,7 +639,7 @@ export class BrowserController {
         this.loginMode = false;
         const clicked = await this.clickAnyVideo(page, { totalTimeoutMs: 12000, requireModalChange: true });
         if (!clicked) throw new Error("已登录，但没有找到可进入的视频");
-        await this.waitForPlaying(page, 5000);
+        await this.waitForPlaying(page, 4000);
         return { action: "login", pageUrl: page.url(), playing: true, message: ACTION_MESSAGES.loginDetected };
       }
       if (await findLoginPanel(page).catch(() => null)) {
