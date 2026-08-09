@@ -3,9 +3,11 @@ import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
+import YAML from "yaml";
 import { buildActionPath, parseCliArgs } from "./command-protocol.js";
+import { sanitizeUserMessage } from "./messages.js";
 
-const config = JSON.parse((await readFile(new URL("../config.json", import.meta.url), "utf8")).replace(/^\uFEFF/, ""));
+const config = YAML.parse((await readFile(new URL("../config.yaml", import.meta.url), "utf8")).replace(/^\uFEFF/, "")) || {};
 const { action, args } = parseCliArgs(process.argv);
 
 if (!action) {
@@ -51,8 +53,8 @@ try {
   let body;
   try { body = JSON.parse(response.body); } catch { body = { ok: false, error: response.body || "控制失败" }; }
   if (!response.ok || !body.ok) throw new Error(body.error || "控制失败");
-  console.log(body.message || `${body.action} 已完成`);
+  console.log(sanitizeUserMessage(body.message || `${body.action} 已完成`, body.action));
 } catch (error) {
-  console.error(error.message);
+  console.error(sanitizeUserMessage(error.message));
   process.exit(1);
 }

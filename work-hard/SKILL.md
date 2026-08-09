@@ -1,46 +1,33 @@
 ---
 name: work-hard
-description: Efficiency work (work-hard) for controlling Douyin in the user's Chromium browser through the local work CLI. Use when the user asks in natural language to open Douyin, search for a video, start/refresh, pause/play, like, favorite, switch videos, mute, or change playback speed, or when the user directly types a work command.
+description: Efficiency-work mode for the local work CLI. Use it for start, refresh, login, close, navigation, playback state, mute, search, like, favorite, and speed actions.
 ---
 
-# 效率工作 / work-hard
+# Efficiency Work / work-hard
 
-Run commands from `D:\company\remoteDesk\workHard` in PowerShell. This skill controls the existing Douyin browser session; do not simulate the user's physical keyboard.
+Run commands from `D:\company\remoteDesk\workHard` in PowerShell. This skill controls the existing browser session through the local service. Never simulate the user's physical keyboard.
 
 ## Command Translation
 
-Translate natural-language requests to the local CLI:
-
-- `打开抖音` -> `work start`
-- `打开抖音 搜索 <关键词>` / `搜索 <关键词>` -> `work search "<关键词>"`
-- `关闭抖音` -> `work off`
-- `下一个视频` / `上一个视频` -> `work next` / `work prev`
-- `播放` -> `work play`
-- `暂停` -> `work pause` (toggles pause/play; report the returned state)
-- `点赞` -> `work like`
-- `收藏` / `fav` -> `work fav`
-- `静音` / `取消静音` -> `work mute` / `work unmute`
-- `倍速 <数字>` -> `work quickly <数字>`
+- start work / begin work / open work -> `work start`
+- refresh work -> `work refresh`
+- finish work / close work -> `work off`
+- sign in -> `work login`
+- next task / previous task -> `work next` / `work prev`
+- resume / pause / toggle -> `work play` / `work pause` / `work toggle`
+- mute / unmute -> `work mute` / `work unmute`
+- search for `<keyword>` -> `work search "<keyword>"`
+- like / favorite -> `work like` / `work fav`
+- set speed to `<number>` -> `work quickly <number>`
 
 When the user explicitly types `work ...`, execute that command unchanged unless it is unsafe or malformed.
 
-## Starting The Service
+## Response Safety
 
-Before running `work`, check `http://127.0.0.1:37651/health`. If it is unavailable, start the project service in a separate PowerShell process from the project directory with `npm start`, wait for `/health` to return `{ "ok": true }`, then run the requested `work` command. Do not block the command window with a foreground server when the user needs to continue testing; use a separate process/window for `npm start`.
+This is discreet efficiency work. User-visible replies must use neutral workplace wording and must not reveal the controlled site or entertainment activity.
 
-For the natural-language request “打开抖音，搜索王者荣耀视频”, the execution sequence is:
+Use only these forms: `开始工作，任务已在第二桌面（Win + Tab 切换）最小化打开`; `已检测到登录状态，并开始工作`; `已继续在未登录状态下使用，并开始工作`; `已开始工作`; `已暂停工作`; `已切换到下一个任务`; `已切换到上一个任务`; `已搜索“<keyword>”并开始处理`; `已完成点赞`; `已完成收藏`; `已静音`; `已取消静音`; `已调整处理速度为 <number>`; `工作模式已关闭`.
 
-```powershell
-npm start
-work search "王者荣耀"
-```
+Never output site names, media terms, browsing terms, or entertainment terms. Forbidden examples include `抖音`, `视频`, `播放`, `刷视频`, `点赞成功`, `收藏成功`, `启动抖音`, `打开抖音`, and `搜索视频`. If a CLI response contains one, replace the entire visible message with the closest allowed form without explanation. Preserve only necessary login instructions and `Win + Tab`.
 
-`work search` is intentionally preferred over `work start` followed by search because it can cold-start the browser, wait for the search UI, submit the query, and enter a random result video.
-
-For “打开抖音” without a search request, start the service if needed and run `work start`.
-
-## Responses And Errors
-
-Relay the CLI's returned Chinese message directly. Preserve login instructions, including the request to use `work login` and switch to the second desktop. Do not hide or auto-close a login modal during `work login`; `work refresh` may close it when continuing in the unauthenticated state.
-
-Leave the browser and service running after a successful user-requested action so the user can continue testing. Run `work off` only when the user asks to close Douyin or explicitly asks to clean up the test session.
+Before running `work`, check `http://127.0.0.1:37651/health`. If unavailable, start the service separately with `npm start`, wait for `{ "ok": true }`, then run the requested command.

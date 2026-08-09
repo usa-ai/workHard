@@ -150,6 +150,11 @@ const LOGIN_CONFIG = { panelCss: LOGIN_PANEL_CSS, closeCss: LOGIN_CLOSE_CSS };
 const LOGIN_REQUIRED_MESSAGE = ACTION_MESSAGES.loginRequired;
 const LOGIN_RETRY_HINT = ACTION_MESSAGES.loginRetryHint;
 
+const RISK_VISIBLE_SCRIPT = () => {
+  const text = (document.body?.innerText || "").replace(/\s+/g, "");
+  return /验证码|安全验证|异常访问|请完成验证|行为验证|访问过于频繁|操作频繁|滑动验证/.test(text);
+};
+
 const LOGIN_VISIBLE_SCRIPT = () => {
   const roots = [
     ...document.querySelectorAll('#login-panel-new, [id^="login-panel-new"], [id^="login-full-panel-"], [class*="login-modal" i]'),
@@ -234,6 +239,36 @@ export class BrowserController {
     this.actionTail = Promise.resolve();
     this.loginGuard = null;
     this.loginMode = false;
+    this.lastActionAt = 0;
+    this.lastActionName = "";
+    this.delays = { ...{
+      guardPollMs: 250,
+      closeRetryMs: 200,
+      videoPollMs: 250,
+      statePollMs: 150,
+      afterNavigationMs: 900,
+      afterClickMs: 500,
+      afterInputMs: 500,
+      afterBackMs: 800,
+      actionStepMs: 400,
+      loginPageMs: 1000,
+      shortStepMs: 300
+    }, ...(config.delays || {}) };
+  }
+
+  delay(name) {
+    return Number(this.delays[name] || this.delays.actionStepMs);
+  }
+
+  async waitForActionGap(action) {
+    const throttle = this.config.throttle || {};
+    const minGap = Number(throttle.minActionGapMs || 450);
+    const sameGap = Number(throttle.sameActionGapMs || 1200);
+    const requiredGap = action === this.lastActionName ? sameGap : minGap;
+    const waitMs = Math.max(0, requiredGap - (Date.now() - this.lastActionAt));
+    if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+    this.lastActionAt = Date.now();
+    this.lastActionName = action;
   }
 
   startLoginGuard(page) {
@@ -243,7 +278,7 @@ export class BrowserController {
       if (running || page.isClosed()) return;
       running = true;
       try { await this.closeLogin(page, 800); } finally { running = false; }
-    }, 250);
+    }, this.delay("guardPollMs"));
     this.loginGuard = { timer };
   }
 
@@ -305,7 +340,7 @@ export class BrowserController {
       await page.evaluate(PLAY_VISIBLE_SCRIPT).catch(() => {});
       const state = await page.evaluate(STATE_SCRIPT).catch(() => null);
       if (state?.current && state.current.readyState >= 2 && !state.current.paused && state.current.currentTime > 0.05) return state;
-      await this.waitStep(page, 250);
+      await this.waitStep(page, this.delay("videoPollMs"));
     }
     const state = await page.evaluate(STATE_SCRIPT).catch(() => null);
     throw new Error(`视频未开始播放，当前状态: ${JSON.stringify(state)}`);
@@ -329,11 +364,11 @@ export class BrowserController {
         const box = await close.boundingBox().catch(() => null);
         if (box) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2).catch(() => {});
         await page.evaluate(CLOSE_LOGIN_SCRIPT, LOGIN_CONFIG).catch(() => {});
-        await this.waitStep(page, 200);
+        await this.waitStep(page, this.delay("closeRetryMs"));
         noCloseCount = 0;
       } else {
         await page.evaluate(CLOSE_LOGIN_SCRIPT, LOGIN_CONFIG).catch(() => {});
-        await this.waitStep(page, 200);
+        await this.waitStep(page, this.delay("closeRetryMs"));
         noCloseCount++;
         if (noCloseCount >= 3) {
           const stillThere = await findLoginPanel(page).catch(() => null);
@@ -357,6 +392,13 @@ export class BrowserController {
 
   async hasLoginPopup(page) {
     return Boolean(await page.evaluate(LOGIN_VISIBLE_SCRIPT).catch(() => false)) || Boolean(await findLoginPanel(page).catch(() => null));
+  }
+
+  async ensureSafePage(page) {
+    if (await page.evaluate(RISK_VISIBLE_SCRIPT).catch(() => false)) {
+      this.stopLoginGuard();
+      throw new Error(ACTION_MESSAGES.riskDetected);
+    }
   }
 
   async isLoggedIn(page) {
@@ -481,12 +523,12 @@ export class BrowserController {
             setTimeout(() => window.scrollBy({ top: -300, behavior: "smooth" }), 250);
           }).catch(() => {});
         }
-        await this.waitStep(page, 350);
+        await this.waitStep(page, this.delay("shortStepMs"));
         continue;
       }
       this.log("INFO", "clickAnyVideo: attempt", result);
       // 给进入详情的页面过渡一点时间
-      await this.waitStep(page, 900);
+      await this.waitStep(page, this.delay("afterNavigationMs"));
       const after = await page.evaluate(STATE_SCRIPT).catch(() => null);
       const entered = isInVideoDetail(after) && (
         !requireModalChange ||
@@ -496,7 +538,7 @@ export class BrowserController {
       );
       if (entered) return true;
       lastReason = "clicked-but-not-entered";
-      await this.waitStep(page, 250);
+      await this.waitStep(page, this.delay("videoPollMs"));
     }
     this.log("WARN", "clickAnyVideo: failed", { lastReason, beforeUrl: before?.url, beforeModalId: before?.modalId });
     return false;
@@ -519,7 +561,7 @@ export class BrowserController {
         })
         .filter((card) => card.visible)).catch(() => []);
       if (!cards.length) {
-        await this.waitStep(page, 300);
+        await this.waitStep(page, this.delay("shortStepMs"));
         continue;
       }
 
@@ -528,17 +570,17 @@ export class BrowserController {
       const target = card.locator(".videoImage, [class*='video_'], [data-e2e='feed-active-video'], img[class*='backgroundCover']").first();
       const videoId = picked.videoId;
       await target.click({ timeout: 2000 }).catch(() => {});
-      await this.waitStep(page, 900);
+      await this.waitStep(page, this.delay("afterNavigationMs"));
       let state = await page.evaluate(STATE_SCRIPT).catch(() => null);
       if (state?.modalId || /\/video\/|\/detail\//.test(state?.url || "")) return true;
 
       if (videoId) {
         await page.goto(`https://www.douyin.com/video/${videoId}`, { waitUntil: "domcontentloaded", timeout: 12000 }).catch(() => {});
-        await this.waitStep(page, 500);
+        await this.waitStep(page, this.delay("afterClickMs"));
         state = await page.evaluate(STATE_SCRIPT).catch(() => null);
         if (Boolean(state?.modalId) || /\/video\/|\/detail\//.test(state?.url || "")) return true;
       }
-      await this.waitStep(page, 300);
+      await this.waitStep(page, this.delay("shortStepMs"));
     }
     return false;
   }
@@ -558,6 +600,7 @@ export class BrowserController {
     let release;
     this.actionTail = new Promise((resolve) => { release = resolve; });
     await previous;
+    await this.waitForActionGap(action);
     this.log("INFO", "action started", { action, payload, queueWaitMs: Date.now() - queuedAt });
     try {
       const result = await this._runAction(action, payload);
@@ -633,7 +676,7 @@ export class BrowserController {
       this.stopLoginGuard();
       page = page || pages.find((candidate) => candidate.url().startsWith("http")) || await contexts[0].newPage();
       await page.goto(this.config.douyinUrl, { waitUntil: "domcontentloaded", timeout: 12000 }).catch(() => {});
-      await this.waitStep(page, 1000);
+      await this.waitStep(page, this.delay("loginPageMs"));
       const message = ACTION_MESSAGES.loginHint;
       if (await this.isLoggedIn(page)) {
         this.loginMode = false;
@@ -658,7 +701,7 @@ export class BrowserController {
         }
         throw error;
       }
-      await this.waitStep(page, 500);
+      await this.waitStep(page, this.delay("afterClickMs"));
       if (!(await findLoginPanel(page).catch(() => null))) throw new Error("登录弹窗未打开，请执行 work login 重试");
       this.loginMode = true;
       return { action: "login", message };
@@ -678,13 +721,14 @@ export class BrowserController {
         throw new Error(`抖音页面导航失败: ${navigationError.message}`);
       }
       this.log("INFO", "open: page loaded", { pageUrl: page.url() });
+      await this.ensureSafePage(page);
       const loggedIn = await this.isLoggedIn(page);
       const mover = fileURLToPath(new URL("../scripts/move-douyin-window.ps1", import.meta.url));
       spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", mover, "-TitlePattern", "抖音"], { detached: true, stdio: "ignore" }).unref();
       for (let i = 0; i < 20; i++) {
         const closed = await this.closeLogin(page, 4000);
         if (closed) break;
-        await this.waitStep(page, 250);
+        await this.waitStep(page, this.delay("videoPollMs"));
       }
       this.startLoginGuard(page);
       this.log("INFO", "open: login modal handled");
@@ -700,14 +744,14 @@ export class BrowserController {
         }).catch(() => false);
         if (back) {
           this.log("INFO", "open: returned to home");
-          await this.waitStep(page, 800);
+          await this.waitStep(page, this.delay("afterBackMs"));
         }
       };
       await restoreHome();
       const clicked = await this.clickAnyVideo(page, { totalTimeoutMs: 12000, requireModalChange: true, allowCloseLogin: true });
       if (!clicked) throw new Error("未能从主页进入视频详情，请执行 work refresh 重试");
       this.log("INFO", "open: video card clicked");
-      await this.waitStep(page, 500);
+      await this.waitStep(page, this.delay("afterClickMs"));
       for (let i = 0; i < 20; i++) {
         await this.closeLogin(page, 1000);
         const state = await page.evaluate(STATE_SCRIPT).catch(() => null);
@@ -717,7 +761,7 @@ export class BrowserController {
           return this.buildStartResult(requestedAction, page, loggedIn, state);
         }
         await page.evaluate(PLAY_VISIBLE_SCRIPT).catch(() => {});
-        await this.waitStep(page, 250);
+        await this.waitStep(page, this.delay("videoPollMs"));
       }
       const playing = await this.waitForPlaying(page, 5000);
       if (!playing?.modalId && !/\/video\/|\/detail\//.test(playing?.url || "")) {
@@ -726,6 +770,7 @@ export class BrowserController {
       return this.buildStartResult(requestedAction, page, loggedIn, playing);
     }
     if (!page) throw new Error(`没有找到 URL 包含 ${this.config.urlPattern} 的标签页`);
+    await this.ensureSafePage(page);
     const loginPanel = await this.hasLoginPopup(page);
     if (loginPanel) {
       if (this.loginGuard) await this.closeLogin(page, 1200);
@@ -742,14 +787,14 @@ export class BrowserController {
       }).catch(() => false);
       if (returned) {
         this.log("INFO", "search: returned to home page");
-        await this.waitStep(page, 800);
+        await this.waitStep(page, this.delay("afterBackMs"));
         await this.ensureLoginReady(page);
       }
       let input = null;
       for (let attempt = 0; attempt <= 2 && !input; attempt++) {
         await this.ensureLoginReady(page);
         input = await findSearchInput(page).catch(() => null);
-        if (!input && attempt < 2) await this.waitStep(page, 500);
+        if (!input && attempt < 2) await this.waitStep(page, this.delay("afterInputMs"));
       }
       if (!input) throw new Error(ACTION_MESSAGES.noSearchInput);
       await input.click({ timeout: 500 }).catch(() => {});
@@ -952,7 +997,7 @@ export class BrowserController {
           return visible?.getAttribute("aria-pressed") || visible?.getAttribute("data-e2e-state") || visible?.className?.toString() || "";
         }).catch(() => "");
         if (afterLike && afterLike !== clicked.before) break;
-        await this.waitStep(page, 150);
+        await this.waitStep(page, this.delay("statePollMs"));
       }
       if (!afterLike || afterLike === clicked.before) {
         throw new Error(`点赞状态没有改变，当前状态: ${afterLike || "未知"}`);

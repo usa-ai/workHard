@@ -14,7 +14,8 @@
     "install-cli": "npm link"
   },
   "dependencies": {
-    "playwright-core": "^1.52.0"
+    "playwright-core": "^1.52.0",
+    "yaml": "^2.7.1"
   },
   "devDependencies": {
     "@types/node": "^26.2.0"

@@ -1,0 +1,56 @@
+# 命令前缀
+commandPrefix: work
+
+# 控制服务端口
+serverPort: 37651
+
+# Chrome DevTools 端口
+cdpPort: 9222
+
+# 抖音站点匹配规则
+urlPattern: douyin.com
+
+# 抖音主页地址
+douyinUrl: https://www.douyin.com
+
+# 是否使用第二桌面模式
+desktopMode: true
+
+# 单个动作最长等待时间（毫秒）
+actionTimeoutMs: 10000
+
+# 动作节流配置
+throttle:
+  # 不同动作之间的最小间隔
+  minActionGapMs: 400
+  # 相同动作连续执行的最小间隔
+  sameActionGapMs: 500
+  # 失败后的最大重试次数
+  maxRetries: 2
+  # 每次重试前等待时间
+  retryDelayMs: 500
+
+# 统一延迟配置
+delays:
+  # 登录守护轮询间隔
+  guardPollMs: 250
+  # 关闭弹窗失败后的重试间隔
+  closeRetryMs: 200
+  # 视频状态轮询间隔
+  videoPollMs: 250
+  # 播放状态轮询间隔
+  statePollMs: 150
+  # 点击/导航后等待页面稳定
+  afterNavigationMs: 800
+  # 点击后等待页面稳定
+  afterClickMs: 300
+  # 输入后等待页面稳定
+  afterInputMs: 300
+  # 返回主页后的等待
+  afterBackMs: 500
+  # 通用步骤延迟
+  actionStepMs: 300
+  # 进入登录页后的等待
+  loginPageMs: 8000
+  # 短等待
+  shortStepMs: 300

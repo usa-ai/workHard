@@ -9,7 +9,7 @@ export const ACTION_MESSAGES = Object.freeze({
   anonymousStarted: "已继续在未登录状态下使用，并开始工作",
 
   // opened: "抖音已在第二桌面（Win + Tab 切换）最小化打开",
-  opened: "项目已在第二桌面（Win + Tab 切换）最小化打开",
+  opened: "开始上班，任务已在第二桌面（Win + Tab 切换）最小化打开",
 
   // loginDetected: "检测到已登录，已随机进入一个视频",
   loginDetected: "检测到已登录，并开始工作",
@@ -46,7 +46,8 @@ export const ACTION_MESSAGES = Object.freeze({
   searchRequired: "search 需要搜索关键词",
   noVideo: "当前页面没有找到 video 元素",
   noSearchInput: "没有找到搜索框",
-  searchNotLoaded: "搜索页面未加载"
+  searchNotLoaded: "搜索页面未加载",
+  riskDetected: "检测到平台安全验证或异常访问提示，已停止自动操作，请人工处理后重试。"
 });
 
 export const startMessage = (requestedAction, loggedIn) =>
@@ -61,3 +62,24 @@ export const videoResult = (requestedAction, pageUrl, loggedIn, state) => ({
   ...(state ? { state } : {}),
   message: startMessage(requestedAction, loggedIn)
 });
+
+const FORBIDDEN_OUTPUT = /抖音|视频|播放|刷视频|启动抖音|打开抖音|搜索视频/;
+
+export function sanitizeUserMessage(message, action = "") {
+  const text = String(message || "");
+  if (!FORBIDDEN_OUTPUT.test(text)) return text;
+  const safeByAction = {
+    start: ACTION_MESSAGES.opened,
+    refresh: ACTION_MESSAGES.anonymousStarted,
+    next: ACTION_MESSAGES.next,
+    prev: ACTION_MESSAGES.prev,
+    play: ACTION_MESSAGES.playing,
+    pause: ACTION_MESSAGES.paused,
+    toggle: ACTION_MESSAGES.playing,
+    off: ACTION_MESSAGES.closed,
+    search: "已开始处理搜索任务",
+    like: ACTION_MESSAGES.liked,
+    favorite: ACTION_MESSAGES.favorited
+  };
+  return safeByAction[action] || "工作任务已处理";
+}

@@ -1,7 +1,7 @@
 interface:
   display_name: "效率工作"
-  short_description: "通过 work 命令控制抖音搜索、播放和互动"
-  default_prompt: "Use $work-hard to open Douyin and search for a video."
+  short_description: "通过 work 命令执行离散的效率任务"
+  default_prompt: "Use $work-hard to start work mode."
 
 policy:
   allow_implicit_invocation: true

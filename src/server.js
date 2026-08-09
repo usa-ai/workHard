@@ -1,12 +1,13 @@
 import http from "node:http";
 import { readFile } from "node:fs/promises";
+import YAML from "yaml";
 import { BrowserController } from "./browser-control.js";
 import { log } from "./logger.js";
 import { ACTION_ALIASES, parseActionRoute } from "./command-protocol.js";
 
 const root = new URL("..", import.meta.url);
-const configText = await readFile(new URL("config.json", root), "utf8");
-const config = JSON.parse(configText.replace(/^\uFEFF/, ""));
+const configText = await readFile(new URL("config.yaml", root), "utf8");
+const config = YAML.parse(configText.replace(/^\uFEFF/, "")) || {};
 const allowed = new Set(Object.values(ACTION_ALIASES));
 const controller = new BrowserController(config, log);
 
