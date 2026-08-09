@@ -1,6 +1,8 @@
 # 效率工作（work-hard）
 
-这是一个本地的 Douyin 控制工具。它通过 Node.js 服务连接 Chrome / Edge 的远程调试端口，然后控制抖音页面里的播放、搜索、点赞、收藏、静音、切换视频等动作。
+这是一个伪装成“效率工具”的本地摸鱼插件。它会通过 Node.js 服务连接 Chrome / Edge 的远程调试端口，控制抖音页面里的播放、搜索、点赞、收藏、静音、切换视频、倍速等动作。
+
+它的设计目标很直白：让你少碰鼠标键盘，多让浏览器替你干活。
 
 你可以在 PowerShell 里直接输入 `work start`、`work search "王者荣耀"` 这一类命令，也可以在 Codex 对话框里用 `$work-hard` 或 `/work-hard` 让模型替你执行同样的操作。
 
@@ -9,6 +11,9 @@
 - `config.yaml`：主配置文件
 - `src/server.js`：本地控制服务
 - `src/cli.js`：`work` 命令入口
+- `src/browser-control.js`：核心浏览器控制逻辑
+- `src/command-protocol.js`：命令别名和路由解析
+- `src/messages.js`：对外提示文案
 - `scripts/restart.mjs`：重启本地服务
 - `install.ps1`：安装、写入配置、创建 CLI 命令
 - `work-hard/SKILL.md`：Codex Skill 定义
@@ -153,6 +158,7 @@ work next
 work prev
 work play
 work pause
+work toggle
 work mute
 work unmute
 work like
@@ -163,24 +169,38 @@ work search "王者荣耀"
 
 常见命令语义：
 
-- `work start`：打开抖音并进入工作状态
-- `work refresh`：回到主页后继续进入一个视频
-- `work login`：在检测到登录弹窗时保留弹窗，方便你切到第二桌面手动登录
+- `work start`：打开抖音，处理登录弹窗，并尽量进入一个正在播放的视频
+- `work refresh`：重新回到主页，再进入视频
+- `work login`：主动打开登录流程；检测到已登录时会直接进入视频
 - `work off`：关闭抖音并停止控制
 - `work next` / `work prev`：切换下一个或上一个视频
-- `work play` / `work pause`：播放和暂停，`pause` 是切换式的
+- `work play` / `work pause` / `work toggle`：控制当前视频播放状态
 - `work mute` / `work unmute`：静音和取消静音
 - `work like`：点赞
 - `work fav`：收藏
-- `work quickly 1.25`：设置播放倍速
-- `work search "关键词"`：搜索并进入结果视频；抖音未打开时会先自动启动
+- `work quickly 1.25`：设置播放倍速，值直接对应播放器的 playbackRate
+- `work search "关键词"`：搜索并进入结果视频；抖音没打开时会先自动启动
 
-旧别名也兼容：
+命令别名也兼容：
 
-- `work open` 等同于 `work start`
-- `work close` 等同于 `work off`
+- `work open`、`work home`、`work s` 等同于 `work start`
+- `work r` 等同于 `work refresh`
+- `work n` 等同于 `work next`
+- `work p` 等同于 `work prev`
+- `work pa` 等同于 `work pause`
 - `work zan` 等同于 `work like`
+- `work se` 等同于 `work search`
 - `work fast` 等同于 `work quickly`
+
+## 行为说明
+
+- 服务默认监听 `127.0.0.1:37651`
+- CLI 会在本地服务没启动时自动拉起服务
+- 如果当前没有可用的抖音标签页，`work start` 和 `work search` 都会尝试打开或接管浏览器
+- 如果浏览器没连上 CDP，程序会尝试启动 Chrome / Edge，并使用 `config.yaml` 里的 `cdpPort`
+- 检测到登录弹窗时，不会强行关闭；`work login` 会保留登录流程，方便你手动登录
+- `work search` 会先回到主页，再找搜索框、输入关键词、点击搜索，然后进入一个结果视频
+- `work like`、`work fav`、`work quickly` 依赖页面结构，页面 DOM 变动后可能需要同步更新定位器
 
 ## 冷启动搜索
 
