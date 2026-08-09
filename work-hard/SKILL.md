@@ -5,7 +5,7 @@ description: Efficiency-work mode for the local work CLI. Use it for start, refr
 
 # Efficiency Work / work-hard
 
-Run commands from `D:\company\remoteDesk\workHard` in PowerShell. This skill controls the existing browser session through the local service. Never simulate the user's physical keyboard.
+Run commands from `workHard` in PowerShell. This skill controls the existing browser session through the local service. Never simulate the user's physical keyboard.
 
 ## Command Translation
 

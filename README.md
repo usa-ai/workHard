@@ -65,7 +65,6 @@ work refresh
 work off
 work next
 work prev
-work play
 work pause
 work mute
 work unmute
@@ -76,6 +75,27 @@ work search "王者荣耀"
 ```
 
 命令说明：
+## 命令速查表（以 `ACTION_ALIASES` 为准）
+
+所有别名最终都会归一化为标准动作名。CLI 和 HTTP 路由共用同一套映射。
+
+| 分类 | 标准命令 | 可用别名 | 作用 |
+| --- | --- | --- | --- |
+| 启动与会话 | `work start` | `open`、`home`、`s` | 开始工作模式 |
+| 启动与会话 | `work refresh` | `r` | 刷新并继续工作 |
+| 启动与会话 | `work login` | 无 | 登录工作账号 |
+| 启动与会话 | `work off` | `close` | 关闭工作模式 |
+| 任务导航 | `work next` | `n` | 切换到下一个任务 |
+| 任务导航 | `work prev` | `p` | 切换到上一个任务 |
+| 播放状态 | `work pause` | `pa` | 暂停/恢复当前任务 |
+| 播放状态 | `work mute` | 无 | 静音 |
+| 播放状态 | `work unmute` | 无 | 取消静音 |
+| 互动操作 | `work like` | `zan` | 完成点赞 |
+| 互动操作 | `work favorite` | `fav` | 完成收藏 |
+| 搜索与速度 | `work search "关键词"` | `se` | 搜索并开始处理任务 |
+| 搜索与速度 | `work quickly 1.25` | `fast` | 调整处理速度 |
+
+不要在新增文档或调用方中重新维护动作列表；新增命令时只修改 `src/command-protocol.js` 中的 `ACTION_ALIASES`，README 表格随后同步更新。
 
 - `work start` 打开抖音，并在第二桌面最小化打开；启动成功后会进入工作状态。
 - `work refresh` 返回主页后重新进入一个视频；已登录和未登录状态会分别提示。
