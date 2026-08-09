@@ -3,4 +3,9 @@ logs/
 .idea/
 *.log
 *.pid
+build/
+dist/
+*.spec
+desktop_pet/__pycache__/
+*.pyc
 debug-*.md

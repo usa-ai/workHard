@@ -1,18 +1,20 @@
 #!/usr/bin/env node
-// 重启控制服务：杀掉旧进程 → 重新后台启动
+// 重启控制服务：杀掉旧进程，再重新启动后台服务
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
+import YAML from "yaml";
 
 const root = new URL("..", import.meta.url);
-const config = JSON.parse((await readFile(new URL("config.json", root), "utf8")).replace(/^\uFEFF/, ""));
+const config = YAML.parse((await readFile(new URL("config.yaml", root), "utf8")).replace(/^\uFEFF/, "")) || {};
 const port = config.serverPort || 37651;
 const logging = process.argv.includes("logging") || process.argv.includes("--logging") || process.env.npm_config_logging === "true";
 
 async function killOldService() {
   return new Promise((resolve) => {
     const ps = spawn("powershell.exe", [
-      "-NoProfile", "-Command",
+      "-NoProfile",
+      "-Command",
       `Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }`
     ], { stdio: ["ignore", "pipe", "pipe"] });
     ps.on("exit", () => resolve());
@@ -27,12 +29,11 @@ async function startService() {
     windowsHide: !logging
   });
   if (!logging) child.unref();
-  // 等待服务就绪（只检测端口是否响应，不发送任何动作）
+
   for (let i = 0; i < 20; i++) {
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((resolve) => setTimeout(resolve, 300));
     try {
       const res = await fetch(`http://127.0.0.1:${port}/`, { method: "POST" });
-      // 服务返回 404 说明 HTTP 服务已就绪（只是没有匹配的路由）
       if (res.status === 404) {
         console.log(`服务已启动: http://127.0.0.1:${port}`);
         return;
@@ -41,6 +42,7 @@ async function startService() {
       // still waiting
     }
   }
+
   console.log("服务启动超时，请检查 node src/server.js");
 }
 

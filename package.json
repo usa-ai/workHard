@@ -9,6 +9,8 @@
   },
   "scripts": {
     "start": "node src/server.js",
+    "pet": "py desktop_pet/pet.py",
+    "test": "py -m unittest desktop_pet.test_pet -v",
     "restart": "node scripts/restart.mjs",
     "restart:logging": "node scripts/restart.mjs --logging",
     "install-cli": "npm link"

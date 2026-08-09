@@ -1,0 +1,1 @@
+"""WorkHard desktop pet package."""
