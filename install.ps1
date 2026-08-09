@@ -13,13 +13,16 @@ if (-not (Get-Module -ListAvailable -Name VirtualDesktop)) {
   Install-Module VirtualDesktop -Scope CurrentUser -Force -AllowClobber
 }
 
-$configPath = Join-Path $PSScriptRoot "config.json"
-$config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
-$config.commandPrefix = $CommandPrefix
-$config.cdpPort = $CdpPort
-$config.serverPort = $ServerPort
-$json = $config | ConvertTo-Json
-[System.IO.File]::WriteAllText($configPath, $json, [System.Text.UTF8Encoding]::new($false))
+$configPath = Join-Path $PSScriptRoot "config.yaml"
+if (-not (Test-Path -LiteralPath $configPath)) {
+  throw "Missing config.yaml"
+}
+
+$configText = Get-Content -LiteralPath $configPath -Raw
+$configText = [regex]::Replace($configText, '(?m)^commandPrefix:\s*.*$', "commandPrefix: $CommandPrefix")
+$configText = [regex]::Replace($configText, '(?m)^serverPort:\s*.*$', "serverPort: $ServerPort")
+$configText = [regex]::Replace($configText, '(?m)^cdpPort:\s*.*$', "cdpPort: $CdpPort")
+[System.IO.File]::WriteAllText($configPath, $configText, [System.Text.UTF8Encoding]::new($false))
 
 Push-Location $PSScriptRoot
 try {

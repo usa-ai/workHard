@@ -1,70 +1,157 @@
 # 效率工作（work-hard）
 
-通过本地 Node.js 服务和 Chrome/Edge CDP 控制抖音。可以在 PowerShell 中使用 `work` 命令，也可以在 Codex 对话框中使用 `$work-hard` Skill 让模型执行相同的命令。
+这是一个本地的 Douyin 控制工具。它通过 Node.js 服务连接 Chrome / Edge 的远程调试端口，然后控制抖音页面里的播放、搜索、点赞、收藏、静音、切换视频等动作。
+
+你可以在 PowerShell 里直接输入 `work start`、`work search "王者荣耀"` 这一类命令，也可以在 Codex 对话框里用 `$work-hard` 或 `/work-hard` 让模型替你执行同样的操作。
+
+## 目录
+
+- `config.yaml`：主配置文件
+- `src/server.js`：本地控制服务
+- `src/cli.js`：`work` 命令入口
+- `scripts/restart.mjs`：重启本地服务
+- `install.ps1`：安装、写入配置、创建 CLI 命令
+- `work-hard/SKILL.md`：Codex Skill 定义
 
 ## 环境要求
 
 - Windows
-- Node.js 20+
+- Node.js 20 或更高版本
 - Chrome 或 Edge
-- 浏览器允许 CDP 远程调试端口 `9222`
-- 项目服务端口：`127.0.0.1:37651`
+- 浏览器开启远程调试端口 `9222`
+- 本地服务端口默认 `37651`
 
 ## 安装
 
-在项目目录 `D:\company\remoteDesk\workHard` 执行：
+在项目根目录执行：
 
 ```powershell
 npm install
 .\install.ps1
 ```
 
-`install.ps1` 会安装 `work` 命令。也可以双击 `setup.cmd` 完成安装和初始化。
+`install.ps1` 会做这几件事：
 
-## 启动服务
+1. 安装依赖
+2. 生成本地 `work` 命令
+3. 写入 `config.yaml`
+4. 同步 Codex Skill 副本
 
-普通后台启动：
+如果你改过 `config.yaml`，重新执行一次安装脚本通常最省事。
+
+## 启动与重启
+
+启动服务：
 
 ```powershell
 npm start
 ```
 
-重启服务并后台运行：
+重启服务：
 
 ```powershell
-npm restart
+npm run restart
 ```
 
-重启服务并在当前窗口持续输出日志：
+带日志重启：
+
+```powershell
+npm run restart:logging
+```
+
+也可以使用：
 
 ```powershell
 npm restart logging
 ```
 
-日志模式会占用当前窗口，停止时按 `Ctrl+C`。`npm restart --logging` 会被 npm 11 当成未知配置参数并显示 warning，不建议使用。
+日志模式会占用当前窗口，停止时按 `Ctrl+C`。
 
-检查服务状态：
+健康检查：
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:37651/health
 ```
 
-正常结果为：
+正常返回：
 
 ```json
 {"ok":true}
 ```
 
-## 基本命令
+## 配置文件：`config.yaml`
 
-所有命令都在 PowerShell 中执行：
+当前项目只使用 `config.yaml`。不要再新建 `config.json`，否则脚本不会读取它。
+
+推荐默认配置：
+
+```yaml
+commandPrefix: work
+serverPort: 37651
+cdpPort: 9222
+urlPattern: douyin.com
+douyinUrl: https://www.douyin.com
+desktopMode: true
+actionTimeoutMs: 10000
+throttle:
+  minActionGapMs: 400
+  sameActionGapMs: 500
+  maxRetries: 2
+  retryDelayMs: 500
+delays:
+  guardPollMs: 250
+  closeRetryMs: 200
+  videoPollMs: 250
+  statePollMs: 150
+  afterNavigationMs: 800
+  afterClickMs: 300
+  afterInputMs: 300
+  afterBackMs: 500
+  actionStepMs: 300
+  loginPageMs: 8000
+  shortStepMs: 300
+```
+
+字段说明：
+
+| 字段 | 作用 | 建议 |
+| --- | --- | --- |
+| `commandPrefix` | 安装后 CLI 命令前缀，例如 `work start` | 保持 `work`，改了以后要重新安装 CLI |
+| `serverPort` | 本地服务监听端口 | 保持默认，除非端口冲突 |
+| `cdpPort` | Chrome / Edge 的远程调试端口 | 必须和浏览器启动参数一致 |
+| `urlPattern` | 识别抖音标签页的 URL 片段 | 一般保持 `douyin.com` |
+| `douyinUrl` | 打开或恢复时跳转的抖音地址 | 一般保持主页地址 |
+| `desktopMode` | 是否启用第二桌面工作模式 | Windows 桌面场景建议保持 `true` |
+| `actionTimeoutMs` | 单个动作的超时时间（毫秒） | 动作偶尔超时可适当调大 |
+| `throttle.minActionGapMs` | 不同动作之间的最小间隔 | 控制命令节奏，避免太快 |
+| `throttle.sameActionGapMs` | 相同动作连续执行的最小间隔 | 防止重复命令过密 |
+| `throttle.maxRetries` | 动作失败后的最大重试次数 | 一般保持 `2` |
+| `throttle.retryDelayMs` | 重试前等待的时间 | 一般保持默认 |
+| `delays.*` | 页面探测、导航、点击、输入等内部等待时间 | 只有在页面很慢或很快时才改 |
+
+如果你不确定怎么改，优先只动这几个最常见的项：
+
+- `serverPort`
+- `cdpPort`
+- `commandPrefix`
+- `actionTimeoutMs`
+
+改完 `config.yaml` 后，重启服务让配置生效：
+
+```powershell
+npm run restart:logging
+```
+
+## 基本命令
 
 ```powershell
 work start
 work refresh
+work login
 work off
 work next
 work prev
+work play
 work pause
 work mute
 work unmute
@@ -74,73 +161,50 @@ work quickly 1.25
 work search "王者荣耀"
 ```
 
-命令说明：
-## 命令速查表（以 `ACTION_ALIASES` 为准）
+常见命令语义：
 
-所有别名最终都会归一化为标准动作名。CLI 和 HTTP 路由共用同一套映射。
+- `work start`：打开抖音并进入工作状态
+- `work refresh`：回到主页后继续进入一个视频
+- `work login`：在检测到登录弹窗时保留弹窗，方便你切到第二桌面手动登录
+- `work off`：关闭抖音并停止控制
+- `work next` / `work prev`：切换下一个或上一个视频
+- `work play` / `work pause`：播放和暂停，`pause` 是切换式的
+- `work mute` / `work unmute`：静音和取消静音
+- `work like`：点赞
+- `work fav`：收藏
+- `work quickly 1.25`：设置播放倍速
+- `work search "关键词"`：搜索并进入结果视频；抖音未打开时会先自动启动
 
-| 分类 | 标准命令 | 可用别名 | 作用 |
-| --- | --- | --- | --- |
-| 启动与会话 | `work start` | `open`、`home`、`s` | 开始工作模式 |
-| 启动与会话 | `work refresh` | `r` | 刷新并继续工作 |
-| 启动与会话 | `work login` | 无 | 登录工作账号 |
-| 启动与会话 | `work off` | `close` | 关闭工作模式 |
-| 任务导航 | `work next` | `n` | 切换到下一个任务 |
-| 任务导航 | `work prev` | `p` | 切换到上一个任务 |
-| 播放状态 | `work pause` | `pa` | 暂停/恢复当前任务 |
-| 播放状态 | `work mute` | 无 | 静音 |
-| 播放状态 | `work unmute` | 无 | 取消静音 |
-| 互动操作 | `work like` | `zan` | 完成点赞 |
-| 互动操作 | `work favorite` | `fav` | 完成收藏 |
-| 搜索与速度 | `work search "关键词"` | `se` | 搜索并开始处理任务 |
-| 搜索与速度 | `work quickly 1.25` | `fast` | 调整处理速度 |
+旧别名也兼容：
 
-不要在新增文档或调用方中重新维护动作列表；新增命令时只修改 `src/command-protocol.js` 中的 `ACTION_ALIASES`，README 表格随后同步更新。
-
-- `work start` 打开抖音，并在第二桌面最小化打开；启动成功后会进入工作状态。
-- `work refresh` 返回主页后重新进入一个视频；已登录和未登录状态会分别提示。
-- `work pause` 是暂停/播放切换，不是单向暂停。暂停时返回 `已暂停` 或 `思考中...`，再次执行会返回 `已开始播放` 或 `工作中...`，具体文案取决于当前消息版本。
-- `work off` 关闭抖音并停止相关控制。
-- `work next` / `work prev` 切换任务视频。
-- `work fav` 是 `work favorite` 的别名。
-- `work quickly <数字>` 设置播放倍速，例如 `work quickly 1.25`。
-- `work search "关键词"` 等待搜索框和搜索结果加载后，随机进入一个结果视频。抖音未打开时也可以直接执行，命令会自动启动浏览器。
-
-旧别名仍保留：`work open` 等同于 `work start`，`work close` 等同于 `work off`，`work zan` 等同于 `work like`，`work fast` 等同于 `work quickly`。
+- `work open` 等同于 `work start`
+- `work close` 等同于 `work off`
+- `work zan` 等同于 `work like`
+- `work fast` 等同于 `work quickly`
 
 ## 冷启动搜索
 
-抖音未打开时可以直接执行：
+抖音没打开时也可以直接执行：
 
 ```powershell
 work search "王者荣耀"
 ```
 
-流程会自动完成：
+流程大致是：
 
-1. 启动可调试的 Chrome/Edge。
-2. 等待抖音主页和搜索框渲染。
-3. 搜索关键词；搜索框查找失败时每隔 500ms 重试，最多重试 2 次。
-4. 等待搜索页加载，并兼容不同版本的结果卡片结构。
-5. 随机进入一个视频并开始播放。
+1. 启动可调试的 Chrome / Edge
+2. 打开抖音主页
+3. 等待搜索框出现
+4. 输入关键词并搜索
+5. 等待结果页加载后随机进入一个视频
+
+如果搜索框或结果卡片一时没出现，脚本会短暂重试，不会马上失败。
 
 ## 登录处理
 
-点赞、收藏或其他需要登录的操作检测到登录弹窗时，会返回登录提示，例如：
+检测到登录弹窗时，脚本会保留弹窗，不会自动把它关掉。返回给用户的提示会引导你输入 `work login`，然后切换到第二桌面完成登录。
 
-```text
-检测到可能需要登录，请键入：work login 并切换至第二桌面(win + Tab)登录后重试；若已登录，请忽略此提示并执行 work refresh。
-```
-
-执行登录：
-
-```powershell
-work login
-```
-
-`work login` 不会自动关闭登录弹窗，用户可以切换到第二桌面使用 `Win + Tab` 完成登录。已经登录时，`work login` 会识别当前登录状态并进入工作视频。
-
-如果希望关闭弹窗并继续未登录使用：
+如果你已经登录，但页面仍然给出登录提示，可以直接执行：
 
 ```powershell
 work refresh
@@ -148,29 +212,41 @@ work refresh
 
 ## Codex Skill
 
-Skill 名称为 `work-hard`，显示名称为“效率工作”。在支持 Skill 引用的对话框中可以使用：
+Skill 名称是 `work-hard`，显示名是“效率工作”。在支持 Skill 引用的对话框里可以这样用：
 
 ```text
 $work-hard 打开抖音，搜索王者荣耀视频
 ```
 
-或使用界面中的：
+或者直接写：
 
 ```text
 /work-hard
 ```
 
-模型会检查本地服务；服务未启动时先运行 `npm start`，再执行：
-
-```powershell
-work search "王者荣耀"
-```
-
-直接输入 `work ...` 时，Skill 会在 PowerShell 中原样执行该命令，并返回 CLI 的实际结果。Skill 文件位于 `work-hard/SKILL.md`，已安装副本位于 `C:\Users\26227\.codex\skills\work-hard\SKILL.md`。
+如果本地服务还没启动，模型会先执行 `npm start`，然后再处理后续命令。
 
 ## 安全范围
 
-- 服务只监听 `127.0.0.1`，不会暴露到局域网。
-- 浏览器控制通过 CDP 和页面事件完成，不模拟用户的实体键盘输入。
-- `work login` 会保留登录弹窗，不会在用户登录过程中自动关闭它。
-- 抖音页面 DOM 或 class 名称变化时，定位器可能需要更新。
+- 本地服务只监听 `127.0.0.1`
+- 浏览器控制只通过 CDP 和页面事件完成，不会模拟真实键盘在系统里乱敲
+- `work login` 不会自动关闭登录弹窗
+- 抖音页面 DOM 或 class 名变化后，定位器可能需要同步更新
+
+## 常见问题
+
+### `npm run restart:logging` 报 `ENOENT: ... config.json`
+
+这表示旧脚本还在找 `config.json`。当前项目已经改用 `config.yaml`，需要把 `scripts/restart.mjs` 和 `install.ps1` 一起同步到新配置文件。
+
+### `work` 命令找不到
+
+重新执行：
+
+```powershell
+.\install.ps1
+```
+
+### 浏览器连不上
+
+确认 Chrome / Edge 已经带着远程调试端口启动，例如 `9222`，并且没有被别的进程占用。
