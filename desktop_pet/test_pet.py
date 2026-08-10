@@ -1,12 +1,19 @@
-import tempfile
-import unittest
 import base64
 import json
+import os
+import tempfile
 import threading
+import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from desktop_pet.pet import ImageGenerator, PetStore, default_pet_image, neutral_status
+from desktop_pet.pet import (
+    ImageGenerator,
+    PetStore,
+    asset_roots,
+    default_pet_image,
+    neutral_status,
+)
 
 
 class PetStoreTests(unittest.TestCase):
@@ -31,9 +38,32 @@ class PetStoreTests(unittest.TestCase):
         for reservation in reservations:
             self.store.release_generation(reservation, True)
 
+    def test_pref_roundtrip(self):
+        self.store.set_pref("scale", 1.25)
+        self.store.set_pref("speed", 4.5)
+        store2 = PetStore(Path(self.temp_dir.name))
+        self.assertEqual(store2.get_pref("scale"), 1.25)
+        self.assertEqual(store2.get_pref("speed"), 4.5)
+
+    def test_asset_roots_include_env_dir(self):
+        with tempfile.TemporaryDirectory(prefix="work-hard-assets-") as extra_dir:
+            previous = os.environ.get("PET_ASSET_DIR")
+            os.environ["PET_ASSET_DIR"] = extra_dir
+            try:
+                roots = asset_roots(Path(self.temp_dir.name))
+                self.assertEqual(roots[0], Path(extra_dir))
+            finally:
+                if previous is None:
+                    os.environ.pop("PET_ASSET_DIR", None)
+                else:
+                    os.environ["PET_ASSET_DIR"] = previous
+
     def test_default_pet_and_neutral_status(self):
         self.assertEqual(default_pet_image().size, (240, 280))
-        self.assertEqual(neutral_status("start", "启动抖音"), "开始工作")
+        self.assertEqual(
+            neutral_status("start", "启动抖音"),
+            "开始工作，任务已在第二桌面（Win + Tab 切换）最小化打开",
+        )
 
     def test_reference_image_generation_uses_edits_endpoint(self):
         received = {}
@@ -61,8 +91,7 @@ class PetStoreTests(unittest.TestCase):
 
         server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
-        root = Path(self.temp_dir.name)
-        reference = root / "reference.png"
+        reference = Path(self.temp_dir.name) / "reference.png"
         reference.write_bytes(image_data)
         generator = ImageGenerator(self.store)
         generator.key = "test-key"

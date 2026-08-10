@@ -1,55 +1,33 @@
-# 桌宠 MVP
+# 桌宠实现说明
 
-功能分支：`codex/desktop-pet`
+这是 `work-hard` 分支里的桌面宠物实现，核心目标是把“单文件 EXE、透明窗口、自由行走、缩放、短句气泡、素材替换、AI 生成”这些能力放在一套可以直接分发的程序里。
 
-## 启动
+更完整的用户说明、打包方式和素材替换教程见 [desktop_pet/README.md](../desktop_pet/README.md)。
 
-```powershell
-py -m pip install -r desktop_pet/requirements.txt
-$env:PET_AI_API_KEY = "你的图片生成服务密钥"
-$env:PET_AI_BASE_URL = "https://api.openai.com/v1" # 可选，兼容 Images API 的服务
-$env:PET_AI_MODEL = "gpt-image-1"                    # 可选
-py desktop_pet/pet.py
-```
+## 现在的实现
 
-默认请求兼容 [OpenAI Images API](https://platform.openai.com/docs/api-reference/images)，文本生成使用 `/images/generations`，参考图生成使用 `/images/edits`；也可以通过 `PET_AI_BASE_URL` 接入兼容服务。
+- `desktop_pet/pet.py` 负责桌宠窗口、托盘、行走、气泡、素材库和 AI 生成
+- `desktop_pet/build.ps1` 负责 PyInstaller 单文件打包
+- `desktop_pet/assets/README.md` 是打包后会一起带上的素材替换说明
+- `desktop_pet/requirements.txt` 只保留运行和打包所需的 Python 依赖
 
-桌宠会复用本项目的 Node 控制服务。源码运行时会在服务未启动时自动尝试启动；打包后的 `.exe` 建议先在项目目录执行 `npm start`，或设置 `WORK_HARD_ROOT`/从项目目录启动，以便桌宠找到 `src/server.js`。
+## 素材路径
 
-也可以直接运行：
+程序会按以下顺序查找素材：
 
-```powershell
-npm run pet
-```
+1. `PET_ASSET_DIR`
+2. `EXE` 同级的 `WorkHardPet.assets`
+3. `%LOCALAPPDATA%\WorkHardPet\assets`
+4. 开发模式下的 `desktop_pet/assets`
 
-API key 只在 Python 主进程读取，不会显示在桌宠界面，也不应写入 Git 或截图。
+所以替换角色时，不需要重新生成 EXE，只要把新的图片丢进优先级更高的目录即可。
 
-## 打包
+## AI 生成
 
-```powershell
-.\desktop_pet\build.ps1
-```
+如果配置了 `PET_AI_API_KEY`，桌宠会调用兼容 OpenAI Images API 的服务来生成素材。默认会尝试：
 
-生成的单文件程序位于 `dist\WorkHardPet.exe`。打包前脚本会安装 Pillow、pystray 和 PyInstaller。
+- `POST /images/generations`
+- `POST /images/edits`
 
-## 桌宠操作
+每天每个本地 profile 最多成功生成 3 次，失败会回滚额度。
 
-- 点击桌宠本体：开始工作。
-- 快捷按钮：开始、切换下一个任务、完成点赞、完成收藏、静音。
-- 搜索栏：输入关键词后开始处理搜索任务。
-- 素材库：选择内置素材、上传 PNG/JPG/WEBP/GIF、上传参考图并自动生成，或输入描述生成新素材。
-- 右键桌宠：打开同一组常用操作和隐藏/退出菜单。
-- 托盘图标：在桌宠隐藏后重新显示或退出。
-
-## 生成额度
-
-每个本地 profile 每个自然日最多成功生成 3 次。额度文件保存在 `%LOCALAPPDATA%\WorkHardPet\state.json`；网络失败、服务错误或图片下载失败会自动归还本次预占额度。
-
-当前没有账号系统，因此“每个用户”默认以本地 profile 表示；也可以通过 `PET_USER_ID` 指定稳定的用户标识。接入登录系统后，应把 `PetStore` 的 profile id 换成服务端认证用户 id，并把额度校验放到服务端。
-
-## 结构
-
-- `desktop_pet/pet.py`：桌宠窗口、素材库、动作桥接、AI 生成和额度控制。
-- `desktop_pet/requirements.txt`：运行与打包依赖。
-- `desktop_pet/build.ps1`：生成 Windows `.exe`。
-- `docs/desktop-pet-research.md`：开源项目调研与许可证结论。

@@ -1,6 +1,6 @@
 # 效率工作（work-hard）
 
-这是一个本地的 Douyin 控制工具。它通过 Node.js 服务连接到已经打开的 Chrome / Edge 浏览器，并用 CDP 控制抖音页面里的视频、搜索、点赞、收藏、静音等动作。
+这是一个伪装成工作的摸鱼插件，本质上是一个本地的 Douyin 控制工具。它通过 Node.js 服务连接到已经打开的 Chrome / Edge 浏览器，并用 CDP 控制抖音页面里的视频、搜索、点赞、收藏、静音等动作。
 
 你可以在 PowerShell 里直接输入 `work start`、`work search "王者荣耀"` 这类命令，也可以在 Codex 对话框里用 `$work-hard` 或 `/work-hard` 让模型替你执行同样的动作。
 
@@ -151,15 +151,34 @@ work login
 work off
 work next
 work prev
-work play
 work pause
 work mute
 work unmute
 work like
-work fav
+work favorite
 work quickly 1.25
 work search "王者荣耀"
 ```
+
+## 命令速查表
+
+所有别名都以 `ACTION_ALIASES` 为准，下面只保留标准命令和常用写法。
+
+| 分类 | 标准命令 | 可用别名 |
+| --- | --- | --- |
+| 打开 / 恢复 | `work start` | `work open`、`work home`、`work s` |
+| 刷新 | `work refresh` | `work r` |
+| 登录 | `work login` | - |
+| 关闭 | `work off` | `work close` |
+| 下一项 | `work next` | `work n` |
+| 上一项 | `work prev` | `work p` |
+| 暂停 | `work pause` | `work pa` |
+| 静音 | `work mute` | - |
+| 取消静音 | `work unmute` | - |
+| 完成 | `work like` | `work zan` |
+| 归档 | `work favorite` | `work fav` |
+| 搜索 | `work search "关键词"` | `work se` |
+| 速度 | `work quickly 1.25` | `work fast` |
 
 常见命令语义：
 
@@ -168,19 +187,12 @@ work search "王者荣耀"
 - `work login`：在检测到登录弹窗时保留弹窗，方便你切到第二桌面手动登录
 - `work off`：关闭抖音并停止控制
 - `work next` / `work prev`：切换下一个或上一个视频
-- `work play` / `work pause`：播放和暂停，`pause` 是切换式的
+- `work pause`：播放和暂停，`pause` 是切换式的
 - `work mute` / `work unmute`：静音和取消静音
 - `work like`：点赞
-- `work fav`：收藏
+- `work favorite`：收藏
 - `work quickly 1.25`：设置播放倍速
 - `work search "关键词"`：搜索并进入结果视频；抖音未打开时会先自动启动
-
-旧别名也保留兼容：
-
-- `work open` 等同于 `work start`
-- `work close` 等同于 `work off`
-- `work zan` 等同于 `work like`
-- `work fast` 等同于 `work quickly`
 
 ## 冷启动搜索
 
@@ -231,7 +243,7 @@ $work-hard 打开抖音，搜索王者荣耀视频
 - 本地服务只监听 `127.0.0.1`
 - 浏览器控制只通过 CDP 和页面事件完成，不会模拟真实键盘在系统里乱敲
 - `work login` 不会自动关闭登录弹窗
-- 抖音页面 DOM 或 class 名变化后，定位器可能需要同步更新
+- 页面 DOM 或 class 名变化后，定位器可能需要同步更新
 
 ## 常见问题
 
@@ -253,4 +265,4 @@ $work-hard 打开抖音，搜索王者荣耀视频
 
 ## 桌宠功能
 
-桌宠启动、素材上传、AI 生成额度和打包说明见 [docs/desktop-pet.md](docs/desktop-pet.md)；开源项目调研见 [docs/desktop-pet-research.md](docs/desktop-pet-research.md)。
+桌宠的完整使用、打包和素材替换说明见 [desktop_pet/README.md](desktop_pet/README.md)；实现说明见 [docs/desktop-pet.md](docs/desktop-pet.md)；开源项目调研见 [docs/desktop-pet-research.md](docs/desktop-pet-research.md)。

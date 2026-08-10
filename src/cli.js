@@ -11,7 +11,7 @@ const config = YAML.parse((await readFile(new URL("../config.yaml", import.meta.
 const { action, args } = parseCliArgs(process.argv);
 
 if (!action) {
-  console.error(`用法: ${config.commandPrefix} start|refresh|login|off|next|prev|play|pause|toggle|mute|unmute|like|favorite|search|quickly`);
+  console.error(`用法: ${config.commandPrefix} start|refresh|login|off|next|prev|pause|mute|unmute|like|favorite|search|quickly`);
   process.exit(2);
 }
 

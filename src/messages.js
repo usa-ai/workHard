@@ -1,9 +1,9 @@
 export const ACTION_MESSAGES = Object.freeze({
-  closed: "工作模式已关闭",
+  closed: "下班",
   loggedInStarted: "已检测到登录状态，并开始工作",
   anonymousStarted: "已继续在未登录状态下使用，并开始工作",
-  opened: "开始上班，任务已在第二桌面（Win + Tab 切换）最小化打开",
-  loginDetected: "检测到已登录，并开始工作",
+  opened: "开始工作，任务已在第二桌面（Win + Tab 切换）最小化打开",
+  loginDetected: "已检测到登录状态，并开始工作",
 
   liked: "任务已标记完成",
   favorited: "任务已归档",
@@ -48,9 +48,7 @@ const SAFE_BY_ACTION = Object.freeze({
   off: ACTION_MESSAGES.closed,
   next: ACTION_MESSAGES.next,
   prev: ACTION_MESSAGES.prev,
-  play: ACTION_MESSAGES.playing,
   pause: ACTION_MESSAGES.paused,
-  toggle: ACTION_MESSAGES.playing,
   mute: ACTION_MESSAGES.muted,
   unmute: ACTION_MESSAGES.unmuted,
   like: ACTION_MESSAGES.liked,

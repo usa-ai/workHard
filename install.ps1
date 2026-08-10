@@ -47,7 +47,7 @@ Set-Content -LiteralPath $wrapper -Value $wrapperLines -Encoding ASCII
 
 $codexSkillRoot = Join-Path $env:USERPROFILE ".codex\skills\browser-media-control"
 New-Item -ItemType Directory -Force -Path $codexSkillRoot | Out-Null
-$skillText = Get-Content (Join-Path $PSScriptRoot "skill\SKILL.md") -Raw
+$skillText = Get-Content (Join-Path $PSScriptRoot "work-hard\SKILL.md") -Raw
 $skillText.Replace("37651", [string]$ServerPort) | Set-Content (Join-Path $codexSkillRoot "SKILL.md") -Encoding UTF8
 
 Write-Host "Installation complete. Start Chrome or Edge with --remote-debugging-port=$CdpPort, then run npm start or npm run pet."
